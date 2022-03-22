@@ -178,18 +178,18 @@ Java虚拟机的内存划分
 - 带参无返回值
 - 带参有返回值
 
-## 5.1.2 定义方法的三个明确点
+### 5.1.2 定义方法的三个明确点
 - 明确方法名称
 - 明确返回值类型
 - 明确参数列表
 
-## 5.1.3 定义方法的注意事项
+### 5.1.3 定义方法的注意事项
 - 方法不能嵌套定义
 - 返回值类型，必须要和`return`语句返回的类型相同，否则编译失败 。
 - 同一个逻辑中 , 不能在`return` 语句后面写代码。
 - void表示无返回值，可以省略return，也可以单独的书写`return;`，后面不加数据
 
-## 5.1.4 方法重载
+### 5.1.4 方法重载
 - 概念：指在同一个类中，允许存在一个以上的同名方法，只要它们的参数列表不同即可，与修饰符和返回值类型无关。
 - 多个方法在同一个类中
 - 多个方法具有相同的方法名
@@ -971,7 +971,7 @@ public class Demo {
 }
 ```
 
-#### Thread和Runnable的区别*
+#### Thread和Runnable的区别
 如果一个类继承Thread，则不适合资源共享。但是如果实现了Runable接口的话，则很容易的实现资源共享。
 - 实现Runnable接口比继承Thread类所具有的优势:
     - 1.适合多个相同的程序代码的线程去共享同一个资源。
@@ -1456,7 +1456,7 @@ public ThreadPoolExecutor(int corePoolSize,
 5.可以通过实现RejectedExecutionHandler接口自定义处理方式。
 
 # 12 IO流
-## 12.1File类
+## 12.1 File类
 `java.io.File` 类是文件和目录路径名的抽象表示，主要用于文件和目录的创建、查找和删除等操作。File类将文件，文件夹和路径封装成了对象，提供大量的方法来操作这些对象。
 - File类的静态成员变量
     - `static String pathSeparator` 与系统有关的路径分隔符。
@@ -1548,7 +1548,7 @@ public static void main(String[] args){
 
 注意：close方法，当完成流的操作时，必须调用此方法，释放系统资源。
 
-#### ileOutputStream类
+#### FileOutputStream类
 `java.io.FileOutputStream `类是文件输出流，用于将数据写出到文件。
 - 构造方法
     - `public FileOutputStream(File file)`：创建文件输出流以写入由指定的 File对象表示的文件。 
@@ -1595,7 +1595,7 @@ public static void main(String[] args){
     - `read`方法，每次可以读取一个字符的数据，提升为int类型，读取到文件末尾，返回`-1`。
     - `read(char[] cbuf)`，每次读取b的长度个字符到数组中，返回读取到的有效字符个数，读取到末尾时，返回`-1`。
 
-## 12.4.2 字符输出流Writer
+### 12.4.2 字符输出流Writer
 `java.io.Writer `抽象类是表示用于写出字符流的所有类的超类，将指定的字符信息写出到目的地。它定义了字节输出流的基本共性功能方法。
 
 - `public abstract void close()` ：关闭此输出流并释放与此流相关联的任何系统资源。  
@@ -3050,7 +3050,7 @@ System.out.println("执行插入语句成功");
 - Statement会使数据库频繁编译SQL，可能造成数据库缓冲区溢出。PreparedStatement 可对SQL进行预编译，从而提高数据库的执行效率。
 - PreperedStatement对于sql中的参数，允许使用占位符的形式进行替换，简化sql语句的编写。
 
-### 19.4 处理和显示结果
+## 19.1.4 处理和显示结果
  Jdbc程序中的ResultSet用于代表Sql语句的执行结果。Resultset封装执行结果时，采用的类似于表格的方式，ResultSet对象维护了一个指向表格数据行的游标，初始的时候，游标在第一行之前，调用ResultSet.next()方法，可以使游标指向具体的数据行，进行调用方法获取该行的数据。
  
 #### 获取行
