@@ -97,10 +97,10 @@ SQL标准的事务隔离级别包括：读未提交（read uncommitted）、读�
 - 可重复读是指，一个事务执行过程中看到的数据，总是跟这个事务在启动时看到的数据是一致的。当然在可重复读隔离级别下，未提交变更对其他事务也是不可见的。
 - 串行化，顾名思义是对于同一行记录，“写”会加“写锁”，“读”会加“读锁”。当出现读写锁冲突的时候，后访问的事务必须等前一个事务执行完成，才能继续执行。
 
-```mysql
+```sql
 mysql> create table T(c int) engine=InnoDB;
 insert into T(c) values(1);
-```
+ ```
 ![](MySQL实战45讲_img/2022-05-07-23-14-59.png)
 
 在不同的隔离级别下，事务A的返回结果，也就是图里面V1、V2、V3的返回值分别是什么。
@@ -151,13 +151,13 @@ MySQL的事务启动方式有以下几种：
 每一个索引在InnoDB里面对应一棵B+树。
 
 例如建表：
-```mysql
+```sql
 mysql> create table T(
 id int primary key, 
 k int not null, 
 name varchar(16),
 index (k))engine=InnoDB;
-```
+ ```
 表中R1~R5的(ID,k)值分别为(100,1)、(200,2)、(300,3)、(500,5)和(600,6)，两棵树的示例示意图如下。
 ![](MySQL实战45讲_img/2022-05-08-21-45-57.png)
 根据叶子节点的内容，索引类型分为主键索引和非主键索引。
@@ -312,11 +312,11 @@ change buffer不会丢失，因为change buffer是可以持久化的数据，在
 
 ## 11讲：怎么给字符串字段加索引
 在email字段上创建索引的语句：
-```mysql
+```sql
 mysql> alter table SUser add index index1(email);
 或
 mysql> alter table SUser add index index2(email(6));
-```
+ ```
 第一个语句创建的index1索引里面，包含了每个记录的整个字符串；而第二个语句创建的index2索引里面，对于每个记录都是只取前6个字节。
 
 ![](MySQL实战45讲_img/2022-05-10-21-21-16.png)
@@ -352,6 +352,7 @@ mysql> alter table SUser add index index2(email(6));
 3.倒序存储，再创建前缀索引，用于绕过字符串本身前缀的区分度不够的问题；
 4.创建hash字段索引，查询性能稳定，有额外的存储和计算消耗，跟第三种方式一样，都不支持范围扫描。
 
+
 ## 12讲：为什么我的MySQL会“抖”一下
 平时的工作中，一条SQL语句，正常执行的时候特别快，但是有时会变得特别慢，并且这样的场景很难复现，它不只随机，而且持续时间还很短。
 看上去，这就像是数据库“抖”了一下。
@@ -382,7 +383,7 @@ mysql> alter table SUser add index index2(email(6));
 
 **InnoDB刷脏页的控制策略**
 正确地告诉InnoDB所在主机的IO能力，这样InnoDB才能知道需要全力刷脏页的时候，可以刷多快。这就要用到innodb_io_capacity这个参数了，它会告诉InnoDB你的磁盘能力。这个值建议设置成磁盘的IOPS，磁盘的IOPS可以通过fio这个工具来测试。
-```mysql
+```sql
  fio -filename=$filename -direct=1 -iodepth 1 -thread -rw=randrw -ioengine=psync -bs=16k -size=500M -numjobs=10 -runtime=10 -group_reporting -name=mytest 
  ```
 
@@ -392,11 +393,11 @@ InnoDB会根据这两个因素先单独算出两个数字。
 
 合理地设置innodb_io_capacity的值，并且平时要多关注脏页比例，不要让它经常接近75%。
 其中，脏页比例是通过Innodb_buffer_pool_pages_dirty/Innodb_buffer_pool_pages_total得到的，具体的命令参考下面的代码：
-```mysql
+```sql
 mysql> select VARIABLE_VALUE into @a from global_status where VARIABLE_NAME = 'Innodb_buffer_pool_pages_dirty';
 select VARIABLE_VALUE into @b from global_status where VARIABLE_NAME = 'Innodb_buffer_pool_pages_total';
 select @a/@b;
-```
+ ```
 
 MySQL中的一个机制，可能让你的查询会更慢：在准备刷一个脏页的时候，如果这个数据页旁边的数据页刚好是脏页，就会把这个“邻居”也带着一起刷掉；而且这个把“邻居”拖下水的逻辑还可以继续蔓延，也就是对于每个邻居数据页，如果跟它相邻的数据页也还是脏页的话，也会被放到一起刷。
 
@@ -555,3 +556,187 @@ InnoDB接入了MySQL后，发现既然binlog没有崩溃恢复的能力，那就
 1.如果是正常运行的实例的话，数据页被修改以后，跟磁盘的数据页不一致，称为脏页。最终数据落盘，就是把内存中的数据页写盘。这个过程，甚至与redo log毫无关系。
 2.在崩溃恢复场景中，InnoDB如果判断到一个数据页可能在崩溃恢复的时候丢失了更新，就会将它读到内存，然后让redo log更新内存内容。更新完成后，内存页变成脏页，就回到了第一种情况的状态。
 
+## 16讲：“orderby”是怎么工作的
+假设这个表的部分定义是这样的：
+```sql
+CREATE TABLE `t` (
+  `id` int(11) NOT NULL,
+  `city` varchar(16) NOT NULL,
+  `name` varchar(16) NOT NULL,
+  `age` int(11) NOT NULL,
+  `addr` varchar(128) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `city` (`city`)
+) ENGINE=InnoDB;
+ ```
+执行：
+```sql
+select city,name,age from t where city='杭州' order by name limit 1000  ;
+ ```
+- MySQL会为每个线程分配一个内存（sort_buffer）用于排序该内存大小为sort_buffer_size
+  - 如果排序的数据量小于sort_buffer_size，排序将会在内存中完成
+  - 如果排序数据量很大，内存中无法存下这么多数据，则会使用磁盘临时文件来辅助排序，也称外部排序
+  - 在使用外部排序时，MySQL会分成好几份单独的临时文件用来存放排序后的数据，然后在将这些文件合并成一个大文件
+
+- mysql会通过遍历索引将满足条件的数据读取到sort_buffer，并且按照排序字段进行快速排序
+  - 如果查询的字段不包含在辅助索引中，需要按照辅助索引记录的主键返回聚集索引取出所需字段
+  - 该方式会造成随机IO，在MySQL5.6提供了MRR的机制，会将辅助索引匹配记录的主键取出来在内存中进行排序，然后在回表
+  - 按照情况建立联合索引来避免排序所带来的性能损耗，允许的情况下也可以建立覆盖索引来避免回表
+
+**全字段排序**
+![](MySQL实战45讲_img/2022-05-12-21-48-42.png)
+1. 通过索引将所需的字段全部读取到sort_buffer中
+2. 按照排序字段进行排序
+3. 将结果集返回给客户端
+缺点：
+造成sort_buffer中存放不下很多数据，因为除了排序字段还存放其他字段，对sort_buffer的利用效率不高
+当所需排序数据量很大时，会有很多的临时文件，排序性能也会很差
+优点：
+ MySQL认为内存足够大时会优先选择全字段排序，因为这种方式比rowid 排序避免了一次回表操作
+
+
+**rowid排序**
+![](MySQL实战45讲_img/2022-05-12-21-48-24.png)
+1. 通过控制排序的行数据的长度来让sort_buffer中尽可能多的存放数据，max_length_for_sort_data
+2. 只将需要排序的字段和主键读取到sort_buffer中，并按照排序字段进行排序
+3. 按照排序后的顺序，取id进行回表取出想要获取的数据
+4. 将结果集返回给客户端
+优点：
+更好的利用内存的sort_buffer进行排序操作，尽量减少对磁盘的访问
+缺点：
+回表的操作是随机IO，会造成大量的随机读，不一定就比全字段排序减少对磁盘的访问
+
+按照排序的结果返回客户所取行数。
+
+## 17讲：如何正确地显示随机消息
+案例：从一个单词表(10000条)中随机选出三个单词。
+建表语句：
+```sql
+mysql> CREATE TABLE `words` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `word` varchar(64) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB;
+ ```
+
+**内存临时表**
+用order by rand()来实现这个逻辑:
+```sql
+mysql> select word from words order by rand() limit 3;
+ ```
+![](MySQL实战45讲_img/2022-05-12-22-02-26.png)
+Extra字段显示Using temporary，表示的是需要使用临时表；Using filesort，表示的是需要执行排序操作。
+
+对于内存表，回表过程只是简单地根据数据行的位置，直接访问内存得到数据，根本不会导致多访问磁盘。优化器没有了这一层顾虑，那么它会优先考虑的，就是用于排序的行越少越好了，所以，MySQL这时就会选择rowid排序。
+
+rowid实际上表示的是每个引擎用来唯一标识数据行的信息:
+1. 对于有主键的InnoDB表来说，这个rowid就是主键ID；
+2. 对于没有主键的InnoDB表来说，这个rowid就是由系统生成的；
+3. MEMORY引擎不是索引组织表。在这个例子里面，你可以认为它就是一个数组。因此，这个rowid其实就是数组的下标。
+
+**order by rand()使用了内存临时表，内存临时表排序的时候使用了rowid排序方法。**
+
+**磁盘临时表**
+不是所有的临时表都是内存表。tmp_table_size这个配置限制了内存临时表的大小，默认值是16M。如果临时表大小超过了tmp_table_size，那么内存临时表就会转成磁盘临时表。
+
+磁盘临时表使用的引擎默认是InnoDB，是由参数internal_tmp_disk_storage_engine控制的。
+
+## 18讲：为什么SQL语句逻辑相同，性能却差异巨大
+**案例一：条件字段函数操作**
+t_modified字段上有索引，执行如下SQL语句：
+```sql
+mysql> select count(*) from tradelog where month(t_modified)=7;
+ ```
+结果：mysql并没有按预计走绿色箭头使用树搜索功能，而是按灰色箭头路径选择索引t_modified。
+![](MySQL实战45讲_img/2022-05-12-22-18-43.png)
+
+原因：**对索引字段做函数操作，可能会破坏索引值的有序性，因此优化器就决定放弃走树搜索功能。**
+
+使用explain命令，查看这条SQL语句的执行结果。
+![](MySQL实战45讲_img/2022-05-12-22-20-54.png)
+key="t_modified"表示的是，使用了t_modified这个索引；在测试表数据中插入了10万行数据，rows=100335，说明这条语句扫描了整个索引的所有值；Extra字段的Using index，表示的是使用了覆盖索引。
+也就是说，由于在t_modified字段加了month()函数操作，导致了全索引扫描。
+
+为了能够用上索引的快速定位能力，我们就要把SQL语句改成基于字段本身的范围查询。
+```sql
+mysql> select count(*) from tradelog where
+  -> (t_modified >= '2016-7-1' and t_modified<'2016-8-1') or
+  -> (t_modified >= '2017-7-1' and t_modified<'2017-8-1') or 
+  -> (t_modified >= '2018-7-1' and t_modified<'2018-8-1');
+ ```
+
+**案例二：隐式类型转换**
+```sql
+mysql > select * from tradelog where tradeid=110717;
+ ```
+tradeid字段上本来就有索引，但explain的结果显示这条语句需要走全表扫描。原因是tradeid的字段类型是varchar(32)，而输入的参数却是整型，所以需要做类型转换。
+
+MySQL里的转换规则：在MySQL中，字符串和数字做比较的话，是将字符串转换成数字。
+对于优化器来说，这个语句相当于：
+```sql
+mysql> select * from tradelog where  CAST(tradid AS signed int) = 110717;
+ ```
+这条语句触发了上面说到的规则：对索引字段做函数操作，优化器会放弃走树搜索功能。
+
+**案例三：隐式字符编码转换**
+```sql
+mysql> CREATE TABLE `trade_detail` (
+  `id` int(11) NOT NULL,
+  `tradeid` varchar(32) DEFAULT NULL,
+  `trade_step` int(11) DEFAULT NULL, /*操作步骤*/
+  `step_info` varchar(32) DEFAULT NULL, /*步骤信息*/
+  PRIMARY KEY (`id`),
+  KEY `tradeid` (`tradeid`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+ ```
+查询id=2的交易的所有操作步骤信息:
+```sql
+mysql> select d.* from tradelog l, trade_detail d where d.tradeid=l.tradeid and l.id=2; /*语句Q1*/
+ ```
+结果：表示没有用上交易详情表trade_detail上的tradeid索引，进行了全表扫描。
+
+原因：两个表的字符集不同，一个是utf8，一个是utf8mb4，所以做表连接查询的时候用不上关联字段的索引。
+
+实际上这个语句等同于下面这个写法：
+```sql
+select * from trade_detail  where CONVERT(traideid USING utf8mb4)=$L2.tradeid.value; 
+ ```
+再次触发了上面说到的原则：对索引字段做函数操作，优化器会放弃走树搜索功能。
+
+应对方法:
+1. 把trade_detail表上的tradeid字段的字符集也改成utf8mb4:
+```sql
+alter table trade_detail modify tradeid varchar(32) CHARACTER SET utf8mb4 default null;
+ ```
+1. 修改字段的字符集的话。如果数据量比较大或业务上暂时不能做这个DDL的话，就只能采用修改SQL语句的方法:
+```sql
+mysql> select d.* from tradelog l , trade_detail d where d.tradeid=CONVERT(l.tradeid USING utf8) and l.id=2; 
+ ```
+
+**小结：**
+- 字段发生了转换,导致本该使用索引而没有用到索引
+  - 条件字段函数操作
+  - 隐式类型转换
+  - 隐式字符编码转换
+(如果驱动表的字符集比被驱动表得字符集小，关联列就能用到索引,如果更大,需要发生隐式编码转换,则不能用到索引,latin< gbk< utf8< utf8mb4)
+
+- 嵌套循环,驱动表与被驱动表选择错误
+  - 连接列上没有索引,导致大表驱动小表,或者小表驱动大表(但是大表走的是全表扫描) --连接列上建立索引
+  - 连接列上虽然有索引,但是驱动表任然选择错误。--通过straight_join强制选择关联表顺序
+  - 子查询导致先执行外表在执行子查询,也是驱动表与被驱动表选择错误。
+  --可以考虑把子查询改写为内连接,或者改写内联视图(子查询放在from后组成一个临时表,在于其他表进行关联)
+  - 只需要内连接的语句,但是写成了左连接或者右连接。比如select * from t left join b on t.id=b.id where b.name='abc'驱动表被固定,大概率会扫描更多的行,导致效率降低.
+--根据业务情况或sql情况,把左连接或者右连接改写为内连接
+
+- 索引选择不同,造成性能差异较大
+  - select * from t where aid= and create_name>'' order by id limit 1;
+  选择走id索引或者选择走(aid,create_time)索引,性能差异较大.结果集都有可能不一致
+  --这个可以通过where条件过滤的值多少来大概判断,该走哪个索引
+
+- 其它一些因素
+  - 比如之前学习到的是否有MDL X锁
+  - innodb_buffer_pool设置得太小,innodb_io_capacity设置得太小,刷脏速度跟不上
+  - 是否是对表做了DML语句之后,马上做select,导致change buffer收益不高
+  - 是否有数据空洞
+  - select选取的数据是否在buffer_pool中
+  - 硬件原因,资源抢占
