@@ -1,4 +1,5 @@
 ## 1 hadoop概述
+9870:监测端口
 ### 1.1 hadoop的优势
 **1.高可靠性**。因为它假设计算元素和存储会失败，因此它维护多个工作数据副本，确保能够针对失败的节点重新分布处理。
 
@@ -36,7 +37,7 @@ HDFS默认采用的是主从架构,架构中有三个角色:一个叫NameNode,�
 
 - 储存块大小的计算：根据寻址时间与磁盘写的速率计算。
 
-### 3.3 hdfs的搭建和配置
+### 2.3 hdfs的搭建和配置
 1. 准备搭建好的集群机器，解压hadoop压缩包；
 2. 在hadoop-3.1.1/etc/hadoop/hadoop-env.xml中配置Java依赖路径；
 3. 在hdfs-site.xml中配置namenode节点等参数；
@@ -52,3 +53,13 @@ HDFS默认采用的是主从架构,架构中有三个角色:一个叫NameNode,�
 7. 此时可以在hadoop-3.1.1/sbin目录下，通过./start-dfs.sh、./stop-dfs.sh一键启动、停止集群；
 8. 在/etc/profile文件中环境变量：`export HADOOP_HOME=/opt/apps/hadoop-3.1.1/`、`export PATH=$PATH:$JAVA_HOME/bin:$HADOOP_HOME/bin:$HADOOP_HOME/sbin`，
 9. `source profile`，此时不管在任何位置都能够启动集群。
+
+## 3 hdfs的shell客户端与Java客户端
+
+
+## 4 hdfs的内部原理机制
+### 4.1 NameNode与DataNode的交互
+
+### 4.2 hdfs的数据存储流程
+
+### 4.3 NameNode的checkpoint
