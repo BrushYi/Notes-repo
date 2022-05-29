@@ -63,3 +63,9 @@ HDFS默认采用的是主从架构,架构中有三个角色:一个叫NameNode,�
 ### 4.2 hdfs的数据存储流程
 
 ### 4.3 NameNode的checkpoint
+
+## 5 MapReduce
+### 5.1 MapReduce流程
+- 当map传输出的value为bean对象时，reduce阶段对values迭代器进行迭代时，需要对value进行深拷贝。原因是reduce的Iterable迭代器的bean对象是一个单例对象，其地址不变，若不进行深拷贝，所有的迭代对象的值都将变为同一对象的值（最后一次迭代到的对象）。
+- 
+## 6 Yarn
