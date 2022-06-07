@@ -58,14 +58,36 @@ HDFS默认采用的是主从架构,架构中有三个角色:一个叫NameNode,�
 
 
 ## 4 hdfs的内部原理机制
-### 4.1 NameNode与DataNode的交互
+### 4.1 HDFS写数据流程（重点）
+写：
 
-### 4.2 hdfs的数据存储流程
+读：
 
-### 4.3 NameNode的checkpoint
+### 4.2 NameNode与DataNode的交互
 
-## 5 MapReduce
-### 5.1 MapReduce流程
-- 当map传输出的value为bean对象时，reduce阶段对values迭代器进行迭代时，需要对value进行深拷贝。原因是reduce的Iterable迭代器的bean对象是一个单例对象，其地址不变，若不进行深拷贝，所有的迭代对象的值都将变为同一对象的值（最后一次迭代到的对象）。
-- 
-## 6 Yarn
+### 4.3 NameNode和SecondaryNameNode
+
+## 5 MapReduce概述
+
+## 6 MapReduce框架原理
+### 6.1 InputFormat数据输入
+
+### 6.2 MapReduce工作流程
+
+### 6.3 Shuffle机制
+#### Partition分区
+#### WritableComparable排序
+#### Combiner合并
+
+### 6.4 OutputFormat数据输出
+
+## 7 Hadoop数据压缩
+
+## 8 Yarn资源调度器
+### 8.1 基础架构
+
+### 8.2 工作机制
+
+### 8.3 作业提交全过程
+
+### 8.4 Yarn调度器和调度算法
