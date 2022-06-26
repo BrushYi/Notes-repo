@@ -43,3 +43,6 @@ select product_id,'store3' as store ,store3 as price from Products where store3 
 ```
 
 - 要点：通过联结进行列转行。
+
+#### 牛客-SQL24 各城市最大同时等车人数
+https://www.nowcoder.com/practice/f301eccab83c42ab8dab80f28a1eef98?tpId=268&tqId=2300011&ru=%2Fpractice%2F65de67f666414c0e8f9a34c08d4a8ba6&qru=%2Fta%2Fsql-factory-interview%2Fquestion-ranking&sourceUrl=
