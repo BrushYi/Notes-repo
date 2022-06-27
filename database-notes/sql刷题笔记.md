@@ -46,3 +46,11 @@ select product_id,'store3' as store ,store3 as price from Products where store3 
 
 #### 牛客-SQL24 各城市最大同时等车人数
 https://www.nowcoder.com/practice/f301eccab83c42ab8dab80f28a1eef98?tpId=268&tqId=2300011&ru=%2Fpractice%2F65de67f666414c0e8f9a34c08d4a8ba6&qru=%2Fta%2Fsql-factory-interview%2Fquestion-ranking&sourceUrl=
+
+- 求同一时刻最大数，过滤出符合条件的数据，开窗按时间排序累加，取最大值。
+
+
+#### 牛客-SQL4 国庆期间每类视频点赞量和转发量
+https://www.nowcoder.com/practice/f90ce4ee521f400db741486209914a11?tpId=268&tags=&title=&difficulty=0&judgeStatus=0&rp=0&sourceUrl=
+
+-  求近N天的数据，可按日期排序指定范围开窗或使用timediff函数过滤。
