@@ -54,3 +54,17 @@ https://www.nowcoder.com/practice/f301eccab83c42ab8dab80f28a1eef98?tpId=268&tqId
 https://www.nowcoder.com/practice/f90ce4ee521f400db741486209914a11?tpId=268&tags=&title=&difficulty=0&judgeStatus=0&rp=0&sourceUrl=
 
 -  求近N天的数据，可按日期排序指定范围开窗或使用timediff函数过滤。
+-  开窗指定计算范围：UNBOUNDED、PRECEDING、FOLLOWING、CURRENT ROW
+```sql
+CURRENT ROW：当前行
+
+n PRECEDING：往前 n 行数据
+
+n FOLLOWING：往后 n 行数据
+
+UNBOUNDED：起点
+
+UNBOUNDED PRECEDING 表示从前面的起点，
+
+UNBOUNDED FOLLOWING 表示到后面的终点
+```
