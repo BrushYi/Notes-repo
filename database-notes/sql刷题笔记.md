@@ -1,5 +1,5 @@
 #### 力扣1179. 重新格式化部门表
-链接：https://leetcode.cn/problems/reformat-department-table
+[重新格式化部门表](https://leetcode.cn/problems/reformat-department-table)
 ![](sql刷题笔记_img/2022-06-14-15-00-47.png)
 ![](sql刷题笔记_img/2022-06-14-15-01-31.png)
 
@@ -28,7 +28,7 @@ group by id;
 - 要点：通过case-when或者if行转列。
 
 #### 力扣1795. 每个产品在不同商店的价格
-链接：https://leetcode.cn/problems/rearrange-products-table
+[每个产品在不同商店的价格](https://leetcode.cn/problems/rearrange-products-table)
 ![](sql刷题笔记_img/2022-06-14-15-03-55.png)
 
 要求：请你重构 Products 表，查询每个产品在不同商店的价格，使得输出的格式变为(product_id, store, price) 。如果这一产品在商店里没有出售，则不输出这一行。
@@ -45,13 +45,13 @@ select product_id,'store3' as store ,store3 as price from Products where store3 
 - 要点：通过联结进行列转行。
 
 #### 牛客-SQL24 各城市最大同时等车人数
-https://www.nowcoder.com/practice/f301eccab83c42ab8dab80f28a1eef98?tpId=268&tqId=2300011&ru=%2Fpractice%2F65de67f666414c0e8f9a34c08d4a8ba6&qru=%2Fta%2Fsql-factory-interview%2Fquestion-ranking&sourceUrl=
+[各城市最大同时等车人数](https://www.nowcoder.com/practice/f301eccab83c42ab8dab80f28a1eef98?tpId=268&tqId=2300011&ru=%2Fpractice%2F65de67f666414c0e8f9a34c08d4a8ba6&qru=%2Fta%2Fsql-factory-interview%2Fquestion-ranking&sourceUrl=)
 
 - 求同一时刻最大数，过滤出符合条件的数据，开窗按时间排序累加，取最大值。
 
 
 #### 牛客-SQL4 国庆期间每类视频点赞量和转发量
-https://www.nowcoder.com/practice/f90ce4ee521f400db741486209914a11?tpId=268&tags=&title=&difficulty=0&judgeStatus=0&rp=0&sourceUrl=
+[国庆期间每类视频点赞量和转发量](https://www.nowcoder.com/practice/f90ce4ee521f400db741486209914a11?tpId=268&tags=&title=&difficulty=0&judgeStatus=0&rp=0&sourceUrl=)
 
 -  求近N天的数据，可按日期排序指定范围开窗或使用timediff函数过滤。
 -  开窗指定计算范围：UNBOUNDED、PRECEDING、FOLLOWING、CURRENT ROW
@@ -68,3 +68,61 @@ UNBOUNDED PRECEDING 表示从前面的起点，
 
 UNBOUNDED FOLLOWING 表示到后面的终点
 ```
+
+#### 牛客-SQL164 2021年11月每天新用户的次日留存率
+[2021年11月每天新用户的次日留存率](https://www.nowcoder.com/practice/1fc0e75f07434ef5ba4f1fb2aa83a450?tpId=268&&tqId=39490)
+
+![](sql刷题笔记_img/2022-06-30-09-26-31.png)
+- 解题过程中出现左连接左表数据没有全部显示的问题
+原因：连接条件设置有误，使用了on...where，两表连接后where将数据过滤掉了，应使用on...and连接两表。
+![](sql刷题笔记_img/2022-06-30-09-30-36.png)
+
+#### SQL167 连续签到领金币
+[连续签到领金币](https://www.nowcoder.com/practice/aef5adcef574468c82659e8911bb297f?tpId=268&&tqId=39493)
+
+```sql
+-- 需求：用户签到获得的金币数
+-- 维度：时间》》2021年7月以来每月获得的、按天计算；用户》》每个用户；
+-- 注意：每天一枚、每7天重新开始一轮、连续第3、7天分别可额外领2、6金币、日期只针对in_time；
+     -- 由于连续签到可能跨月，故金币先按日统计
+-- 思路：
+        -- 过滤，取出uid，in_time,将日期与in_time的排名相减得出相同的值为连续签到记录same_dt
+        -- 对same_dt开窗排名，得连续签到排名
+        -- 判断签到排名，给出相应金币，按月分组求和得出结果
+
+with t as (
+select uid,
+    date(in_time) as dt,
+    date_sub(date(in_time),INTERVAL ROW_NUMBER() over(partition by uid order by date(in_time)) day) as same_dt
+from
+    tb_user_log
+where artical_id = 0 and sign_in = 1 and date(in_time) between '2021-07-07' and '2021-10-31'
+)
+
+select 
+    uid,
+    month,
+    sum(other_m) as coin
+from(
+select 
+    uid,
+    DATE_FORMAT(dt,'%Y%m') as month,
+    day_nb,
+    CASE
+    WHEN day_nb%7 = 3 then 3
+    when day_nb%7 = 0 then 7
+    else 1
+    end as other_m
+from(
+select 
+    uid,
+    dt,
+    ROW_NUMBER() over(partition by uid,same_dt order by dt) as day_nb
+from t) as t2
+  ) as t3
+  group by uid,month;
+```
+
+- 要点：
+  - 对于求多段的连续记录，可先求一排名，排名与一连续字段再求差值，该值相同表示连续，对其排名可得连续的具体值；
+  - 判断每天金币数时，以1为默认值，满足条件时另加。

@@ -92,7 +92,7 @@ RDD之间并不进行数据处理，只有当RDD被行动算子触发时，才�
 对于RDD创建时，数据会分区进行处理，同一rdd内不同分区的数据具有相同的计算逻辑，最后被分配到不同的执行端进行处理。
 
 - 从本地集合创建rdd时：
-  1. 默认分区为1；
+  1. 默认为所有可用核数；
   2. 设置spark编程环境选择运行模式时设置`conf.setMaster("local[*]")`，*为最大内核数；
   3. 执行`conf.set("spark.default.parallelism","n")`;
   4. 创建RDD时设置`sc.make(arr,n)`
@@ -111,7 +111,27 @@ RDD转化过程中，RDD分区中的数据如果发生数据重排，将发生sh
 ##### 分区与Task
 每个RDD中每个分区的计算逻辑是一样的，当RDD触发动作算子后，会将整个计算逻辑封装发送给Task对象，产生的Task数取决于分区数。
 
-##### 本地Driver与远程执行者Executor
-对于计算时变量的闭包无效的原因：
-在集群模式下，Driver将生成的task发生给远程端Executor执行，执行者运行在不同的JVM环境下，其中闭包的变量相当于一个副本，其产生的变化不会对本地产生影响。
+##### 闭包
+函数可以访问函数外部定义的变量，但是函数内部对该变量进行的修改，在函数外是不可见的，即对函数外源变量不会产生影响。
+spark中的闭包，指那些没有定义在算子作用域内部，却被算子处理和操作了的变量。
+
+- 本地Driver与远程执行者Executor
+在集群模式下，Driver将生成的tas发送给远程端Executor执行，执行者运行在不同的JVM环境下，其中闭包的变量相当于一个副本，其产生的变化不会对本地产生影响。
 如果想让一个变量在全局产生作用，使用全局累加器。
+(集群模式下，Driver端将整个计算逻辑封装成task发送给远程端执行，计算发生在远程端，而Driver端与远程端并不是处在同一个JVM环境中，远程端中的变量相当于一个副本，与Driver端并不会产生关系)
+
+### 3.3 Spark-core常用算子
+- mapPartitions(func)——对每个rdd的分区应用func函数
+- mapPartitionsWithIndex(func)——类似mapPartitions，不同之处在于func可以接收到每个元素所属分区号
+- sample(withReplacement, fraction, seed——返回一个随机采样的样本rdd
+- union(otherDataset)——求并集
+- intersection(otherDataset)——求交集
+- distinct([numPartitions]))——去重
+- groupByKey([numPartitions])——按key分组，将 (K, V)  RDD 转成： (K, Iterable<V>)RDD
+Note: 如果分组后是为了做聚合(如：sum、average) ，则使用reduceByKey 或aggregateByKey将更加高效；
+- reduceByKey(func, [numPartitions])_按key进行分组聚合；聚合结果必须与输入数据相同 v,v=>v
+- aggregateByKey(zeroValue)(seqOp, combOp, [numPartitions])——按key进行分组聚合；聚合结果可以与输入数据类型不同. u,v=>u
+- sortByKey([ascending], [numPartitions])——根据key排序
+
+- RDD的第一次分区发生在RDD生成时，可以在随后使用`partitionBy`shuffer重新分区，此外在运行一些算子的时候也可以自定义重新分区。
+
