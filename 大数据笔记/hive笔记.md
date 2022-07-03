@@ -385,6 +385,87 @@ group by colum1;
 
 #### Parquet 格式
 
+---
 
 ## 10 知识点
+### 1.HQL转化成MapReduce的原理：
+> HQL语句首先被解析器转换成AST语法树，这时会语义检查（表、字段、语法），再由编译器生成可执行逻辑，然后由优化器优化执行流程，最后执行器将执行逻辑转换成物理执行计划，开始执行MapReduce。
 
+
+### 2.Hive 和普通关系型数据库有什么区别？
+> 1) Hive不是数据库，本质上是一个SQL转换工具，只是语法和SQL类似。
+> 1) Hive的底层是MapReduce，数据存储在HDFS上；普通关系型数据库底层是执行引擎，数据储存在本地系统。
+> 1) 索引：Hive没有索引，底层是MR，扫描所有数据。
+> 1) 数据更新：Hive不支持数据的改写和添加，在加载时就确定好了;数据库可以增删改查。
+> 1) Hive不支持事务。
+
+### 3.Hive 支持哪些数据格式
+> textFile、ORC、Parquet
+
+### 4.Hive 在底层是如何存储 NULL 的
+> Hive中的空值分两种：NULL和\N，默认null在底层是以\N存储，这个参数由`serialization.null.format' = '\N`设定。
+
+### 5.HiveSQL 支持的几种排序各代表什么意思（Sort By/Order By/Cluster By/Distrbute By）
+> 1) Order By 表示全局排序，只有一个 Reducer；
+> 2) Sort By表示分区内排序，每个 Reducer 内部进行排序；
+> 3) Distribute By类似mr中的partition，可控制控制某个特定行到某个reducer；
+> 4) Cluster By 除了具有 distribute by 的功能外还兼具 sort by 的功能。但只能升序排序，当Sort By与Distribute By相同时可以使用。
+
+### 6.Hive 的动态分区
+> 分区是Hive存储数据的一种方式，分目录储存数据，使用分区可以快速定位数据位置，提高查询效率。
+> hive分区有静态分区和动态分区，静态分区是手动指定，动态分区是开启后，在执行sql的时根据字段的值插入相应分区中。
+> hive.exec.dynamic.partition=true 开启动态分区
+> hive.exec.dynamic.partition.mode=strict或nonstrict设置模式，strict表示必须指定至少一个分区为静态分区，nonstrict 模式表示允许所有的分区字段都可以使用动态分区。
+> ps:静态分区时在建表时指定分区字段，该字段为伪列，并不实际存在，相当于指定一个文件夹，插入与查询数据时以其为依据进行查找。动态分区的字段是实际存在的，位置需要放在最后。
+> [动态分区详解](https://blog.csdn.net/m0_48283915/article/details/108942191)
+> [分区注意细节](https://blog.csdn.net/shammy_feng/article/details/99946701?spm=1001.2101.3001.6650.1&utm_medium=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7Edefault-1-99946701-blog-108771653.pc_relevant_multi_platform_whitelistv2&depth_1-utm_source=distribute.pc_relevant.none-task-blog-2%7Edefault%7ECTRLIST%7Edefault-1-99946701-blog-108771653.pc_relevant_multi_platform_whitelistv2)
+
+### 7.HQL 和 SQL 有哪些常见的区别
+> Hive是为了数据仓库设计的,采用了类SQL的查询语言HQL。除了HQL之外，无任何相似的地方。
+> 语句方面：
+> 1) hive sql不支持非等值连接，sql支持非等值连接；
+> 2) 在hive中默认的NULL值是存储为\N，在SQL中字段没有值或者为空即表示为NULL；
+> 3) 部分函数使用不同，比如HQL的date_sub/add中不用写interval、day以及字符串分割mysql为substring_index("str","分隔符",返回数量)，hql为split("str", '分隔符')[下标]；
+> 4) hive支持将转换后的数据直接写入不同的表，还能写入分区、hdfs和本地目录; SQL是直接落地到文件；
+> 5) 建表语句不一样，hive有列分割，按字段分割，sql没有。
+
+### 8.Hive 中的内部表和外部表的区别
+> 内部表（managed table）由未被external修饰，外部表被external修饰（external table）。
+> 内部表数据由自身管理，删除表会删除元数据和存储数据；外部表数据由HDFS管理，删除表仅删除元数据，不擅长存储文件。
+
+### 9.Hive 表进行关联查询如何解决长尾和数据倾斜问题
+> 长尾意味着运行时间长发生数据倾斜了。[Map、Reduce、Join情况](https://zhuanlan.zhihu.com/p/320515172)
+> 1) 当大小表关联且小表是从表时，使用 map join;
+map join 可将小表放入内存中，避免长尾的分发。所谓从表，即LEFT OUTER JOIN中的右表，或者RIGHT OUTER JOIN中的左表。
+> 2) Join 的 2个表都是大表，且由于空值导致长尾，可将空值处理成随机值;
+> 3) Join 的 2个表都是大表，且由于热点值导致长尾，可以先将热点Key取出，对于主表数据用热点Key切分成热点数据和非热点数据两部分分别处理，最后合并。
+
+### 10.HiveSQL 的优化（系统参数调整、SQL 语句优化）
+> SQL 语句优化:[详见](https://zhuanlan.zhihu.com/p/180353740)
+> 核心思想：
+> 减少数据量（例如分区、列剪裁）；
+> 避免数据倾斜（例如加参数、Key打散）;
+> 避免全表扫描（例如on添加加上分区等）；
+> 减少job数（例如相同的on条件的join放在一起作为一个任务）。
+> 具体示例：
+> 1) 使用分区剪裁、列剪裁
+在分区剪裁中，当使用外关联时，如果将副表的过滤条件写在Where后面，那么就会先全表关联，之后再过滤。
+> 2) 尽量不要用COUNT DISTINCT，因为COUNT DISTINCT操作需要用一个Reduce Task来完成，这一个Reduce需要处理的数据量太大，就会导致整个Job很难完成，一般COUNT DISTINCT使用先GROUP BY再COUNT的方式替换，虽然会多用一个Job来完成，但在数据量大的情况下，这个绝对是值得的。
+> 3) 使用with as，因为拖慢hive查询效率除了join产生的shuffle以外，还有一个就是子查询，在SQL语句里面尽量减少子查询。with as是将其查询的数据事先提取出来（类似临时表），可以避免重复计算。
+> 4) 大小表的join，将条目少的表/子查询放在Join操作符的左边,让位于Join操作符左边的表的内容加载进内存，可适当减少数据量，提高效率（新版Hive已优化）。
+> 5) 数据倾斜只会发生在shuffle过程中，注意会触发shuffer的算子。
+> 
+> 系统参数调整:[详见](https://www.cnblogs.com/ITtangtang/p/7683028.html)
+> 1) 开启开启本地模式，设置启动条件，大多数情况下Hive通过本地模式在单台机器上就可以处理任务
+> set hive.exec.mode.local.auto=true; //开启本地 mr
+//设置 local mr 的最大输入数据量，当输入数据量小于这个值时采用 local mr 的方式，默认为 134217728，即128M 
+set hive.exec.mode.local.auto.inputbytes.max=50000000;     
+//设置 local mr 的最大输入文件个数，当输入文件个数小于这个值时采用 local mr 的方式，默认为 4     
+set hive.exec.mode.local.auto.input.files.max=10;
+> 2) 开启并行执行，如果某些阶段不是互相依赖，是可以并行执行的
+set hive.exec.parallel=true,可以开启并发执行。
+set hive.exec.parallel.thread.number=16; //同一个sql允许最大并行度，默认为8。
+会比较耗系统资源。
+> 3) JVM重用,用于避免小文件的场景或者task特别多的场景，JVM重用可以使得JVM实例在同一个job中重新使用N次
+set mapred.job.reuse.jvm.num.tasks=10;
+> 4) 动态分区。
