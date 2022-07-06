@@ -111,14 +111,42 @@ RDD转化过程中，RDD分区中的数据如果发生数据重排，将发生sh
 ##### 分区与Task
 每个RDD中每个分区的计算逻辑是一样的，当RDD触发动作算子后，会将整个计算逻辑封装发送给Task对象，产生的Task数取决于分区数。
 
-##### 闭包
-函数可以访问函数外部定义的变量，但是函数内部对该变量进行的修改，在函数外是不可见的，即对函数外源变量不会产生影响。
-spark中的闭包，指那些没有定义在算子作用域内部，却被算子处理和操作了的变量。
+##### 自定义分区
+```scala
+    println("-------------------自定义分区--------------------------")
+    val kvRdd2: RDD[(String, (String, String, String, String))] = stuRdd.map(e => {
+      val arr = e.split(",")
+      (arr(2), (arr(0), arr(1), arr(2), arr(3)))
+    })
+    // 新建分区器，设置传入参数（可以是数组或其他类型）
+    val par2 = new MyPartioner2(3)
+    // 传入分区器
+    val grRdd3= kvRdd2.groupByKey(par2)
 
-- 本地Driver与远程执行者Executor
-在集群模式下，Driver将生成的tas发送给远程端Executor执行，执行者运行在不同的JVM环境下，其中闭包的变量相当于一个副本，其产生的变化不会对本地产生影响。
-如果想让一个变量在全局产生作用，使用全局累加器。
-(集群模式下，Driver端将整个计算逻辑封装成task发送给远程端执行，计算发生在远程端，而Driver端与远程端并不是处在同一个JVM环境中，远程端中的变量相当于一个副本，与Driver端并不会产生关系)
+    grRdd3.mapPartitionsWithIndex((p,iter)=>{
+      iter.map(tp=>{
+        tp._2.map(stu=>(tp._1,stu,"分区号是" + p))
+      })
+    }).foreach(println)
+```
+**自定义分区器**
+```scala
+// 根据主键key进行分区
+class MyPartioner2(numberPartitions:Int) extends Partitioner{
+  override def numPartitions: Int = numberPartitions
+
+  override def getPartition(key: Any): Int = {
+    val v = key.asInstanceOf[String]
+    if(v.equals("语文")){
+      0
+    }else if(v.equals("数学")){
+      1
+    }else{
+      2
+    }
+  }
+}
+```
 
 ### 3.3 Spark-core常用算子
 - mapPartitions(func)——对每个rdd的分区应用func函数
@@ -135,10 +163,212 @@ Note: 如果分组后是为了做聚合(如：sum、average) ，则使用reduceB
 
 - RDD的第一次分区发生在RDD生成时，可以在随后使用`partitionBy`shuffer重新分区，此外在运行一些算子的时候也可以自定义重新分区。
 
+### 3.4 闭包引用
+#### 闭包是什么
+函数可以访问函数外部定义的变量，但是函数内部对该变量进行的修改，在函数外是不可见的，即对函数外源变量不会产生影响。
+spark中的闭包，指那些没有定义在算子作用域内部，却被算子处理和操作了的变量。
+
+- 本地Driver与远程执行者Executor
+集群模式下，Driver端将整个计算逻辑封装成task发送给远程端执行，计算发生在远程端，而Driver端与远程端并不是处在同一个JVM环境中，远程端中的变量相当于一个副本，与Driver端并不会产生关系。
+
+#### 闭包引用的原理
+在RDD触发行动算子以后，Driver端会进行闭包监测，确保被引用到的对象能被序列化，随后将这些对象序列化打包发送给Worker端，反序列化后供执行者使用。
+
+注意：
+  - 闭包引用的对象必须实现序列化接口;
+  - 普通对象每个task一份，object对象整个executor只有一份（可能线程不安全）；
+  - 计算逻辑内的新建对象不属于闭包。
+
+### 3.5 广播变量
+闭包并不适合传递太大的对象，一来耗费空间，二来影响效率。
+
+应对这种情况可以使用广播变量（BitTorrent协议）：
+1）当任务跨多个stage并且需要同样的数据时；
+2）当需要以反序列化的形式来缓存数据时。
+
+注意:
+  - RDD不能被广播；
+  - 广播只能在Driver端定义与修改；
+  - 广播变量的值被修改以后需要重新广播
+
+### 3.6 RDD缓存与累加器
+#### RDD缓存
+当多个job计算链条都需要使用同一个RDD的数据时，可以将该RDD的数据缓存起来，以供重复使用。
+
+API：
+  1) 缓存：cache() [内部是调用的persist(StorageLevel.MEMORY_ONLY)]
+  2) 清除缓存：unpersist()
+
+> RDD缓存所占的内存并不会和计算内存产生冲突，两者之间分离且有一个动态调整的机制。
+
+
+### 3.7 累加器与自定义累加器
+由于在task中操作闭包变量并无法对Driver端产生影响，所以如果要对计算的内容今天统计的话，需要使用累加器。
+
+示例：使用累加器对单词出现的次数进行统计。
+**自定义累加器**
+```scala
+//输入类型与输出类型
+class Demo05_自定义累加器 extends AccumulatorV2[String, mutable.Map[String,Int]]{
+  // 定义输出map
+  var mp = mutable.Map[String, Int]()
+
+  // 判断是否为初始值
+  override def isZero: Boolean = mp.isEmpty
+
+  // 复制方法
+  override def copy(): AccumulatorV2[String, mutable.Map[String, Int]] = new Demo05_自定义累加器()
+
+  // 清除方法
+  override def reset(): Unit = mp.clear()
+
+  // 每个分区的单词统计
+  override def add(k: String): Unit = {
+    val v = mp.getOrElse(k, 0)
+    var cnt = v+1
+    mp.put(k,cnt)
+  }
+
+  // 每个分区的map集合结果汇总
+  override def merge(other: AccumulatorV2[String, mutable.Map[String, Int]]): Unit = {
+    // 对其他分区的map依次进行遍历，结果汇总到mp中
+    val taskMap = other.value
+    taskMap.foreach(tp=>{
+      val key = tp._1
+      val value = tp._2
+      var cnt = mp.getOrElse(key, 0)
+      cnt += value
+      mp.put(key,cnt)
+    })
+  }
+
+  override def value: mutable.Map[String, Int] = mp
+}
+
+```
+
+**累加器的使用**
+```scala
+object Demo05_Test {
+  def main(args: Array[String]): Unit = {
+    val sc = SparkUtil.getSparkContext("自定义累加器")
+
+    // 导入数据，创建rdd
+    val rdd = sc.textFile("data//word2.txt")
+
+    // 创建累加器
+    val a = new Demo05_自定义累加器
+    // 注册累加器
+    sc.register(a)
+
+    rdd
+      .flatMap(e=>{
+      e.split("\\s+")
+    })
+      .foreach(word=>{
+        // 在行动算子内对累加器进行操作
+        a.add(word)
+      })
+
+    // 返回累加器结果
+    val mp_cnt = a.value
+    mp_cnt.foreach(println)
+  }
+
+}
+```
+### 3.8 RDD的深度理解
+#### RDD的五大属性
+**概要**
+RDD对象中并不真实存储数据，而只是封装着“对数据读写操作的逻辑定义”：
+- 本RDD的“数据”将从哪里去读
+- 读进来的数据需要做什么样的运算；
+- 算完的结果需要写到哪里去
+
+RDD的本质，更像scala中的迭代器。
+
+##### 1.compute计算函数
+描述了本RDD是如何计算的，封装了父RDD数据的迭代器以及计算函数。
+
+##### 2.依赖RDD列表
+存储着当前RDD所依赖的一个或多个前序RDD
+
+##### 3.分区列表
+数据分区划分的列表
+- 处理HDFS上的文件时，会按文件及偏移量范围划分partition，通常一个hdfs的block块对应一个partition
+- 处理MySQL等数据库中的数据时，会按照用户指定的某个字段的取值范围和指定的分区数进行partition划分
+
+> 面试题：处理MySQL数据库的数据时如何分区？
+JdbcRDD有个参数可以指定分区，根据查询的数据量指定分区个数。
+
+##### 4.[可选] key-value类型RDD的分区器
+对RDD重新划分分区时使用
+
+##### 5.[可选] 每个分区的首选计算执行位置
+移动任务优先于移动数据。
+
+#### RDD的懒加载原理
+Rdd转换算子的lazy原理，与scala的迭代器算子的lazy原理很类似
+
+Scala迭代器算子：map/flatMap等，方法的内部实现只是创建了一个新的迭代器返回（并没有去调用迭代器的hasNext和next进行迭代计算）
+
+Rdd的转换算子：map/flatMap等，方法的内部实现只是创建了一个新的RDD返回（并没有去调用RDD内部的迭代器的hasNext和next进行迭代计算）
+
+
+## 4 Spark的job调度
+RDD设计思想 ==>  scala迭代器“描绘”数据运算逻辑 + 分布式任务调度功能封装
+### 4.1 分布式执行引入的问题
+#### 任务分片
+问题：当一个任务放置到多个节点上并行执行时会引发数据被重复计算的问题。
+
+解决：所以引入任务分片机制，将数据分区交由对应task处理。
 
 #### shuffer
-为什么rdd数据处理过程中会出现断开？
+问题：当需要对多个分区内的不同数据进行汇总处理时，无法得出全局结果。
+
+解决：将运算逻辑链划分成多个stage）每个stage形成独立task任务，上下游衔接借助数据的shuffle。
+
 shuffle是spark用来在不同executors甚至机器之间重新分配数据的一种机制。
 有些运算需要将各节点上的同一类数据汇集到某一节点进行计算，把这些分布在不同节点的数据按照一定的规则汇集到一起的过程称为 Shuffle。
 
-有些运算需要将处于不同分区上的同一类数据进行汇总计算，这个时候会将数据洗牌，按照一定的规则汇集到一起，这个过程称为shuffer。
+#### 行动算子的重新设计
+问题：在普通的scala迭代器中，一旦调用行动算子，则整个迭代器链条将立即执行。
+
+解决：分布式运算模式下，将“行动算子”的功能改造成：对整个逻辑链条的分布式任务生成及提交、调度（即job调度）。
+
+> sc.runJob 会把用户通过RDD定义的运算链，转化成一系列stage，及task计算任务并提交到集群执行；
+> 1.	初始化job
+> 2.	根据代码，判断哪里shuffer，划分阶段
+> 3.	在各个阶段中，根据最后一个RDD的分区数据创建不同的task
+> 4.	将task交给调度器，根据集群资源、数据位置合理分配task
+> 5.	Task执行，针对目标数据的并行计算
+
+### 4.2 RDD的血缘与依赖
+- 相邻两个RDD的关系为依赖关系，新RDD依赖于旧RDD。
+- 一连串的依赖关系称为血缘关系。
+
+#### Dependency依赖关系
+Dependency描述了父子血缘，也描述了父子RDD的分区间关系，并且Dependency也是判定是否需要划分stage（shuffle）的依据。
+
+#### 窄依赖
+指的是父 RDD 中的一个分区最多只会被子RDD 中的一个分区使用。
+- 一对一依赖（OneToOneDependency）
+- 范围依赖（RangeDependency）
+
+#### 宽依赖
+指的是父 RDD 的一个分区被子RDD的多个分区所依赖。
+
+### 4.3 Job调度中的核心概念
+- Application(应用)： 创建一个sparkContext，就生成了一个application；
+- job:行动算子触发job，一个job就是一个DAG的运算流程（触发了一次sc.runJob() 就是一次job）；
+- DAG:有向无环图，是一系列RDD转换关系的描述；
+- Stage（阶段）：以shuffle为分界线，将DAG转换逻辑从整体切分为多个阶段；
+- Task Set：每个阶段task的集合，数量为该stage最后一个RDD的分区数；
+- task：本质上是一个类，封装了调用rdd迭代器的代码以及将计算结果输出的代码；
+
+> Task在spark内部共有2种： shuffleMapTask 和  resultTask
+最后一个stage所产生的task，是resultTask
+其他stage所产生的task，都属于shuffleMapTask
+
+### 4.4 分区的切片计算逻辑
+当从文件导入数据创建RDD时，Spark对数据进行分区的操作底层是hadoop的FileInputFormat的getSplits方法。
