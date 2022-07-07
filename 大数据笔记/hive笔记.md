@@ -400,7 +400,9 @@ group by colum1;
 > 1) Hive不支持事务。
 
 ### 3.Hive 支持哪些数据格式
-> textFile、ORC、Parquet
+> textFile：Hive的默认格式，数据不压缩，磁盘开销大、数据解析开销大。
+> ORC：数据按行分块、每块按照列存储 ，压缩快，快速列存取，效率比rcfile高,是rcfile的改良版本，相比RC能够更好的压缩，能够更快的查询，但还是不支持模式演进。
+> Parquet：Parquet能够很好的压缩，有很好的查询性能，支持有限的模式演进。但是写速度通常比较慢。这种文件格式主要是用在Cloudera Impala上面的。
 
 ### 4.Hive 在底层是如何存储 NULL 的
 > Hive中的空值分两种：NULL和\N，默认null在底层是以\N存储，这个参数由`serialization.null.format' = '\N`设定。
@@ -469,3 +471,9 @@ set hive.exec.parallel.thread.number=16; //同一个sql允许最大并行度，�
 > 3) JVM重用,用于避免小文件的场景或者task特别多的场景，JVM重用可以使得JVM实例在同一个job中重新使用N次
 set mapred.job.reuse.jvm.num.tasks=10;
 > 4) 动态分区。
+
+### 11.分区表与分桶表
+
+### 12.hive数据倾斜
+
+### 13.hive优化
