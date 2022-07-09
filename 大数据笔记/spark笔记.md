@@ -448,7 +448,67 @@ Java 的序列化比较重，序列化后对象的提交也比较大。Spark使�
 ```
 
 ## 5 Spark程序分布式运行模式
-### 5.1 Standalone模式（Client/cluster）
+>spark程序分布式运行的模式有很多种：
+1. Standalone模式（Client/cluster）： 在spark Standalone集群上运行 
+2. Yarn 模式（Client/cluster）：在yarn上运行
+3. Mesos/k8s : 在mesos集群或者k8s集群上运行
+
+### 5.1 spark 运行时主要角色
+- SparkSubmit（进程）
+应用提交的客户端程序
+
+-	Driver（线程）  
+含有SparkContext实例的那个线程
+(功能：利用sparkcontext 做stage切分，生成taskset，调度task ,收集结果 , 广播数据 )
+
+-	ApplicationMaster（进程）（yarn-cluster模式下有） 
+类同于MapReduce中的MRAppMaster（local模式中是LocalJobRunner）
+是yarn的规范中要求的用户程序的主管进程！
+ApplicationMaster负责申请容器启动executor，及调用Driver线程的功能；
+
+-	ExecutorLauncher（yarn-client模式下有）
+作为一个简化的applictionMaster运行在容器中，只负责向RM申请容器申请启动executor；
+
+-	Executor（进程）  
+Executor是Task的具体执行者；
+它负责调用task中的runTask方法来执行task的运算逻辑；
+（executor是进程，task是被线程所调用的对象）
+
+-	Task（对象）    
+Task中就是封装了对FinalRDD的迭代器进行循环调用的逻辑；
+Task分为ShuffleMapTask和ResultTask
+
+#### Standalone集群搭建
+1. 下载安装包解压；
+2. 修改spark-env.sh,添加配置：
+  > export JAVA_HOME=/opt/apps/jdk1.8.0_191/
+  export HADOOP_CONF_DIR=/opt/apps/hadoop-3.1.1/etc/hadoop/
+  export YARN_CONF_DIR=/opt/apps/hadoop-3.1.1/etc/hadoop/
+3. 修改slaves文件，添加worker节点；
+4. 修改一键启停脚本start/stop-all.sh为start/stop-spark.sh，避免与hadoop发生冲突；
+5. 将安装包分发到其他节点；
+6. 修改系统环境变量，添加SPARK_HOME与PATH路径；
+7. 启动standalone集群。
+
+
+### 5.2 Standalone集群
+#### Client模式
+![](spark笔记_img/2022-07-09-14-36-02.png)
+1. 任务提交后本地生成Driver，Driver创建一个SparkContext，由sc与Master通信，sc向Master注册并申请运行Executor的资源；
+2. Master找到可用的Worker，为其Executor分配资源，并启动Executor进程；
+3. Executor向Driver反向注册；
+4. Driver开始执行main函数，触发Action算子后，生成DAG；
+5. DAG中根据shuffle阶段划分stage；
+6. 每个stage根据其最后一个RDD的分区数产生相应数量的Task，每个stage一个TaskSet；
+7. TaskSet交由任务调度器（TaskScheduler）处理，Executor向sc申请任务，任务调度器将Task分发给Executor运行，同时sc将应用程序代码发放给Executor；
+8. Executor运行任务，反馈结果，运行完毕后写入数据并释放资源。
+
+#### Cluster模式
+![](spark笔记_img/2022-07-09-15-08-07.png)
+1. 任务提交后，Master 会找到一个 Worker 启动 Driver进程；
+2. 后续步骤同上。
+
+
 ![](spark笔记_img/2022-07-07-21-12-12.png)
 1. worker向master注册，master负责向其分配资源；
 2. Driver端main中定义RDD计算逻辑，触发行动算子；
