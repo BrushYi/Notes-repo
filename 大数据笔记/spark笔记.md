@@ -492,27 +492,85 @@ Task分为ShuffleMapTask和ResultTask
 
 
 ### 5.2 Standalone集群
-#### Client模式
+#### Standalone-Client模式
 ![](spark笔记_img/2022-07-09-14-36-02.png)
-1. 任务提交后本地生成Driver，Driver创建一个SparkContext，由sc与Master通信，sc向Master注册并申请运行Executor的资源；
-2. Master找到可用的Worker，为其Executor分配资源，并启动Executor进程；
-3. Executor向Driver反向注册；
-4. Driver开始执行main函数，触发Action算子后，生成DAG；
-5. DAG中根据shuffle阶段划分stage；
-6. 每个stage根据其最后一个RDD的分区数产生相应数量的Task，每个stage一个TaskSet；
-7. TaskSet交由任务调度器（TaskScheduler）处理，Executor向sc申请任务，任务调度器将Task分发给Executor运行，同时sc将应用程序代码发放给Executor；
-8. Executor运行任务，反馈结果，运行完毕后写入数据并释放资源。
+> 1. 任务提交后本地生成Driver，Driver创建一个SparkContext，由sc与Master通信，sc向Master注册并申请运行> Executor的资源；
+> 2. Master找到可用的Worker，为其Executor分配资源，并启动Executor进程；
+> 3. Executor向Driver反向注册；
+> 4. Driver开始执行main函数，触发Action算子后，生成DAG；
+> 5. DAG中根据shuffle阶段划分stage；
+> 6. 每个stage根据其最后一个RDD的分区数产生相应数量的Task，每个stage一个TaskSet；
+> 7. TaskSet交由任务调度器（TaskScheduler）处理，Executor向sc申请任务，任务调度器将Task分发给Executor运> 行，同时sc将应用程序代码发放给Executor；
+> 8. Executor运行任务，反馈结果，运行完毕后写入数据并释放资源。
 
-#### Cluster模式
+#### Standalone-Cluster模式
 ![](spark笔记_img/2022-07-09-15-08-07.png)
 1. 任务提交后，Master 会找到一个 Worker 启动 Driver进程；
 2. 后续步骤同上。
 
+### 5.3 yarn集群
+#### yarn-Client模式
+![](spark笔记_img/2022-07-10-20-37-58.png)
+> 1. 客户端提交一个Application，在客户端启动一个Driver进程；
+> 2. Driver向ResourceManager发生请求启动Application；
+> 3. RM收到请求，分配container，选择一台NodeManager启动AM；
+> 4. 此时的 ApplicationMaster 的功能相当于一个ExecutorLaucher， 只负责向 ResourceManager申请 Executor 内存;
+> 5. RM收到AM的资源分配请求后，分配container，启动相应的Executor进程；
+> 6. Executor启动后，向Driver反向注册；
+> 7. Executor注册完后，Driver开始执行main函数，执行到Action算子时触发job；
+> 8. 生成DAG，根据宽窄依赖划分stage，生成对应的taskSet，分发到各个Executor执行。
 
-![](spark笔记_img/2022-07-07-21-12-12.png)
-1. worker向master注册，master负责向其分配资源；
-2. Driver端main中定义RDD计算逻辑，触发行动算子；
-3. 触发runjob，Driver端构建DAG，按shuffle划分阶段，生成每个阶段的taskSet；
-4. 由sparksubmit向master提交job；
-5. worker向Driver端反向注册；
-6. Driver端调度task到worker端的Exexutor执行。
+
+#### yarn-Cluster模式
+![](spark笔记_img/2022-07-10-20-39-03.png)
+> 1. 客户端提交一个Application，向ResourceManager发生请求启动Application；
+> 2. RM收到请求，分配container，选择一台NodeManager启动AM；
+> 3. 此时的 ApplicationMaster 就是 Driver,Driver 启动后向 ResourceManager 申请 Executor 内存;
+> 4. 后续同上。
+
+#### spark on yarn的两种模式区别
+Client模式一般用于测试，这种情况下Driver端是运行在本地的，好处是可以本地调试方便。
+Cluster一般用于生产环境，但是调试不方便，只能到Yarn上找log或者远程调试。
+在Yarn中，每个Application实例都有一个ApplicationMaster进程，它是Application启动的第一个容器。它负责和ResourceManager打交道并请求资源，获取资源之后告诉NodeManager为其启动Container。
+
+Cluster模式下，Driver运行在AM(Application Master)中，它负责向Yarn申请资源，并监督作业的运行状况。当用户提交了作业之后，就可以关掉Client，作业会继续在Yarn上运行，因而Cluster模式不适合运行交互类型的作业；
+
+Client模式下，Application Master仅仅向Yarn请求Executor，Client会和请求的Container通信来调度他们工作，也就是说Client不能离开；
+### 5.4 Standalone集群与yarn集群的区别
+- 相同点
+standalone是spark自身携带的资源管理框架，yarn是hadoop中的资源管理框架。都是对核心和内存进行管理和分配。
+- 不同点
+底层实现方式不一样。standalone是比较简单的资源管理，给application分配核心时，分配多少就占用多少，但核心和内存分配自由度大。而yarn是以container为单位分配的，粒度较粗，当然可以自行设置container中资源的大小。yarn中有fifo调度器，容量调度器，公平调度器这三种资源分配策略，可以动态实现资源的扩缩，更灵活，更重。
+另外，spark可以集成的资源管理框架还有mesos，k8s。
+
+## 6 job调度全流程（task调度）
+![](spark笔记_img/2022-07-10-21-43-18.png)
+
+1) 构造并初始化SparkContext
+2) 创建RDD构建DAG
+3) 触发行动算子
+4) 切分Stage，生成Task和TaskSet
+5) 提交stage
+6) TaskScheduler提交TaskSet
+7) 在Executor中执行Task
+
+### 6.1 stage的创建与提交
+#### 源码
+![](spark笔记_img/2022-07-10-21-45-43.png)
+
+#### 过程
+![](spark笔记_img/2022-07-10-21-46-09.png)
+> 过程概述：
+> 在根据shuffle切分stage后，DAGScheduler首先根据Final RDD，调用createResultStage方法来生成ResultStage，在提交resultStage之前，会检查是否有父Stage，如果有会先创建父shuffleMapStage，每个stage提交之前都会检查是否有父stage，有的话先创建父stage，没有的话就提交，形成了一个递归。
+> 整体上看，stage的创建与提交是由下往上创建，由下往上提交。
+
+### 6.2 task的调度
+![](spark笔记_img/2022-07-10-22-16-37.png)
+DAGScheduler划分stage之后将taskSet发送TaskScheduler中，TaskScheduler将task序列化，根据调度策略发给executor，Executor收到Task对象并反序列化后，会将Task包装成一个TaskRunner类以便放入线程池执行。
+
+## 7 Shuffle Writer机制
+![](spark笔记_img/2022-07-10-22-28-33.png)
+
+需补充。
+
+## 8 Spark内存管理机制
