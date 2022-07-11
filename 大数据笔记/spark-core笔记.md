@@ -495,7 +495,7 @@ Task分为ShuffleMapTask和ResultTask
 ### 5.2 Standalone集群
 #### Standalone-Client模式
 ![](spark笔记_img/2022-07-09-14-36-02.png)
-> 1. 任务提交后本地生成Driver，Driver创建一个SparkContext，由sc与Master通信，sc向Master注册并申请运行> Executor的资源；
+> 1. 任务提交后本地生成Driver，Driver创建一个SparkContext，由sc与Master通信，sc向Master注册并申请运行Executor的资源；
 > 2. Master找到可用的Worker，为其Executor分配资源，并启动Executor进程；
 > 3. Executor向Driver反向注册；
 > 4. Driver开始执行main函数，触发Action算子后，生成DAG；
