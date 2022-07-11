@@ -126,3 +126,62 @@ from t) as t2
 - 要点：
   - 对于求多段的连续记录，可先求一排名，排名与一连续字段再求差值，该值相同表示连续，对其排名可得连续的具体值；
   - 判断每天金币数时，以1为默认值，满足条件时另加。
+
+#### SQL149 根据指定记录是否存在输出不同情况
+[根据指定记录是否存在输出不同情况](https://www.nowcoder.com/practice/f72d3fc27dc14f3aae76ee9823ccca6b?tpId=240&tags=&title=&difficulty=0&judgeStatus=0&rp=0&sourceUrl=%2Fexam%2Foj%3Ftab%3DSQL%25E7%25AF%2587%26topicId%3D240)
+
+```sql
+-- 需求：未完成试卷数大于2时，0级用户的试卷未完成数和未完成率，若无，输出所有
+-- 维度：试卷完成情况；用户
+-- 注意：有未完成试卷数大于2的0级用户，输出0级用户，否则输出所有；未作答过试卷，未完成率默认填0
+-- 思路分析:
+    -- 连接两表，对uid分组计算作答数，未完成数（为null则置0）
+    -- 使用union，根据exists分两种情况输出
+
+WITH tb AS (
+	SELECT
+		user_info.uid,
+		ifnull( incomplete_cnt, 0 ) AS incomplete_cnt,
+		ifnull( round( incomplete_cnt / cnt, 3 ), 0.000 ) AS incomplete_rate,
+		cnt,
+	LEVEL 
+	FROM
+		user_info
+		LEFT JOIN (
+		SELECT
+			uid,
+			ifnull( count( start_time ), 0 ) AS cnt,
+			sum(
+			IF
+			( submit_time, 0, 1 )) AS incomplete_cnt 
+		FROM
+			exam_record 
+		GROUP BY
+			exam_record.uid 
+		) AS t ON user_info.uid = t.uid 
+	) SELECT
+	uid,
+	incomplete_cnt,
+	incomplete_rate 
+FROM
+	tb 
+WHERE
+	EXISTS ( SELECT uid FROM tb WHERE LEVEL = 0 AND incomplete_cnt > 2 ) 
+	AND `level` = 0 UNION ALL
+SELECT
+	uid,
+	incomplete_cnt,
+	incomplete_rate 
+FROM
+	tb 
+WHERE
+	NOT EXISTS ( SELECT uid FROM tb WHERE LEVEL = 0 AND incomplete_cnt > 2 ) 
+	AND cnt > 0 
+ORDER BY
+	incomplete_rate;
+```
+
+- 要点：
+  - 对于值为null的记录，根据情况赋值为0；
+  - 分两种情况输出时，用where exist (查询是否存在记录)判断是否输出；
+  - 两个输出条件互斥，可以使用union all。
