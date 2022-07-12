@@ -495,13 +495,13 @@ Task分为ShuffleMapTask和ResultTask
 ### 5.2 Standalone集群
 #### Standalone-Client模式
 ![](spark笔记_img/2022-07-09-14-36-02.png)
-> 1. 任务提交后本地生成Driver，Driver创建一个SparkContext，由sc与Master通信，sc向Master注册并申请运行Executor的资源；
+> 1. 任务提交后本地生成Driver，Driver创建一个SparkContext，由sc与Master通信，sc向Master注册并申请运行 Executor的资源；
 > 2. Master找到可用的Worker，为其Executor分配资源，并启动Executor进程；
 > 3. Executor向Driver反向注册；
 > 4. Driver开始执行main函数，触发Action算子后，生成DAG；
 > 5. DAG中根据shuffle阶段划分stage；
 > 6. 每个stage根据其最后一个RDD的分区数产生相应数量的Task，每个stage一个TaskSet；
-> 7. TaskSet交由任务调度器（TaskScheduler）处理，Executor向sc申请任务，任务调度器将Task分发给Executor运> 行，同时sc将应用程序代码发放给Executor；
+> 7. TaskSet交由任务调度器（TaskScheduler）处理，Executor向sc申请任务，任务调度器将Task分发给Executor运行，同时sc将应用程序代码发放给Executor；
 > 8. Executor运行任务，反馈结果，运行完毕后写入数据并释放资源。
 
 #### Standalone-Cluster模式
@@ -516,10 +516,10 @@ Task分为ShuffleMapTask和ResultTask
 > 2. Driver向ResourceManager发生请求启动Application；
 > 3. RM收到请求，分配container，选择一台NodeManager启动AM；
 > 4. 此时的 ApplicationMaster 的功能相当于一个ExecutorLaucher， 只负责向 ResourceManager申请 Executor 内存;
-> 5. RM收到AM的资源分配请求后，分配container，启动相应的Executor进程；
+> 5. RM收到AM的资源分配请求后，分配container，在各个NodeManager启动相应的Executor进程；
 > 6. Executor启动后，向Driver反向注册；
 > 7. Executor注册完后，Driver开始执行main函数，执行到Action算子时触发job；
-> 8. 生成DAG，根据宽窄依赖划分stage，生成对应的taskSet，分发到各个Executor执行。
+> 8. 生成DAG，根据宽窄依赖划分stage，生成对应的taskSet，将Task分发到各个Executor执行。
 
 
 #### yarn-Cluster模式
@@ -545,28 +545,31 @@ standalone是spark自身携带的资源管理框架，yarn是hadoop中的资源�
 另外，spark可以集成的资源管理框架还有mesos，k8s。
 
 ## 6 job调度全流程（task调度）
-> spark程序提交以后 ,创建sparkContext , 根据提交模式在不同的位置创建Driver端 , 初始化Job , 创建DAG ,划分
-> 阶段 , 封装TaskSet , 创建Task ,调度Task ! Driver将Task通过TaskScheduler分配到不同的Executor上 , 在 
-> 不同的Executor上反序列化创建Task实例, 以线程的形式运行当前Task , 如果是shuffleMapTask会有中间结果,写出
-> 到本 > 地磁盘 , 等待下游Task读取数据。
+> spark程序提交以后 , 根据提交模式在不同的位置创建Driver端 ,初始化sparkContext , 初始化Job , 创建DAG ,
+> 划分阶段 , 封装TaskSet , 创建Task ,调度Task ! Driver将Task通过TaskScheduler分配到不同的Executor
+> 上 , 在不同的Executor上反序列化创建Task实例, 以线程的形式运行当前Task , 如果是shuffleMapTask会有中间
+> 结果,写出到本地磁盘 , 等待下游Task读取数据。
 
 ![](spark笔记_img/2022-07-10-21-43-18.png)
 
 1) 构造并初始化SparkContext
 2) 创建RDD构建DAG
 3) 触发行动算子
-4) 切分Stage，生成Task和TaskSet
+4) 切分Stage，生成TaskSet
 5) 提交stage
-6) TaskScheduler提交TaskSet
+6) TaskScheduler发送Task
 7) 在Executor中执行Task
 
 ### 6.1 stage的创建与提交
 #### 源码
 ![](spark笔记_img/2022-07-10-21-45-43.png)
 
-#### 过程
+#### Stage的划分过程
 ![](spark笔记_img/2022-07-10-21-46-09.png)
-> 过程概述：
+> DAGScheduler从最后一个RDD开始，从后往前调用递归，判断该RDD与父RDD之间的依赖关系，如果是窄依赖，会继续向上递归，如果遇到宽依赖，则会由此断开，将这部分RDD划分为一个Stage，然后继续递归判断，直到第一个RDD，递归结束，stage划分完毕。随后DAGScheduler从前往后基于每个Stage生成TaskSet（set中的task数取决于每个stage中final rdd的分区数），并提交给TaskScheduler。
+> Stage划分是从后往前划分，但是stage执行时从前往后的。
+> 
+> 
 > 在根据shuffle切分stage后，DAGScheduler首先根据Final RDD，调用createResultStage方法来生成ResultStage，在提交resultStage之前，会检查是否有父Stage，如果有会先创建父shuffleMapStage，每个stage提交之前都会检查是否有父stage，有的话先创建父stage，没有的话就提交，形成了一个递归。
 > 整体上看，stage的创建与提交是由下往上创建，由下往上提交。
 
@@ -576,7 +579,55 @@ DAGScheduler划分stage之后将taskSet发送TaskScheduler中，TaskScheduler将
 
 ## 7 Shuffle Writer机制
 ![](spark笔记_img/2022-07-10-22-28-33.png)
-
-需补充。
-
+> Shuffle 分为 Shuffle Write 和 Shuffle Read 两个阶段，分别负责stage间数据的输出与输入。
+> Shuffle Write 主要是生成 shuffle 中间文件的一个过程。在 shuffle 中间文件生成的过程中，Shuffle Writer 主要
+> 承担的功能有：数据分区、聚合和排序 3 个功能。
+> 当 Shuffle Write 输出了 shuffle 中间文件后，就到了 Shuffle Read 阶段。Shuffle Read 主要需要实现 3 个功
+> 能：跨节点拉取数据，聚合和排序。
+> 在Spark中有三种shuffle写，分别是BypassMergeSortShuffleWriter、UnsafeShuffleWriter、SortShuffleWriter。
+> 不同shuffleWrite是根据shuffleHandle来决定的，在构建shuffleDependence时都会构建shuffleHandle，在registerShuffle方法中，会根据不同的条件判断使用不同的shuffleHandle。
+> 
+![](spark-core笔记_img/2022-07-12-15-34-12.png)
 ## 8 Spark内存管理机制
+作为一个JVM进程，Executor的内存管理建立在JVM的内存管理之上，Spark对JVM的堆内（On-heap）空间进行了更为详细的分配，以充分利用内存。同时，Spark引入了堆外（Off-heap）内存，使之可以直接在工作节点的系统内存中开辟空间，进一步优化了内存的使用。 
+![](spark-core笔记_img/2022-07-12-15-42-04.png)
+### 堆内内存
+默认情况下，Spark 仅仅使用了堆内内存。Executor 端的堆内内存区域大致可以分为以下四大块： 
+![](spark-core笔记_img/2022-07-12-15-35-56.png)
+![](spark-core笔记_img/2022-07-12-15-36-13.png)
+
+### 堆外内存
+相比堆内内存，堆外内存只区分 Execution 内存和 Storage 内存
+![](spark-core笔记_img/2022-07-12-15-37-55.png)
+
+堆外内存可以避免频繁的 GC，但是必须自己编写内存申请和释放的逻辑。
+
+## 9 知识点整理
+为什么要划分stage（调度阶段）？
+> 由于一个job任务中可能有大量的宽窄依赖，由于窄依赖不会产生shuffle，宽依赖会产生shuffle。后期划分完stage
+> 之后，在同一个stage中只有窄依赖，并没有宽依赖，这些窄依赖对应的task就可以相互独立的取运行。划分完stage之
+> 后，它内部是有很多可以并行运行task。
+
+---
+如何划分stage？（宽依赖划分）
+> 1）生成DAG有向无环图之后，从最后一个rdd往前推，先创建一个stage，它是最后一个stage。
+> 2）如果遇到窄依赖，就把该rdd加入到stage中，如果遇到宽依赖，就从宽依赖切开，一个stage也就划分结束了。
+> 3）后面重新创建一个新的stage，还是按照第二部操作继续往前推，一直推到最开始的rdd，整个划分stage也就结束了。
+
+---
+stage的内部逻辑
+> 1）每一个stage中按照RDD的分区划分了很多个可以并行运行的task
+> 2）把每一个stage中这些可以并行运行的task都封装到一个taskSet集合中
+> 3）前面stage中task的输出结果数据 ，是后面stage中task输入数据
+
+---
+Application 、job、Stage、task之间的关系
+> Application是spark的一个应用程序，它包含了客户端写好的代码以及任务运行的时候需要的资源信息。
+> 后期一个application中有很多个action操作，一个action操作就是一个job，一个job会存在大量的宽依赖，后期会
+> 按照宽依赖进行stage的划分，一个job又产生很多个stage，每一个stage内部有很多可以并行的task。
+
+---
+DAG与RDD的关系
+> DAG是有向无环图，指的是数据转换执行的过程，是RDD的一个依赖关系和执行流程。RDD触发行动算子后就形成了DAG。
+
+---
