@@ -553,8 +553,8 @@ standalone是spark自身携带的资源管理框架，yarn是hadoop中的资源�
 ![](spark笔记_img/2022-07-10-21-43-18.png)
 
 1) 构造并初始化SparkContext
-2) 创建RDD构建DAG
-3) 触发行动算子
+2) 触发行动算子
+3) 创建RDD构建DAG
 4) 切分Stage，生成TaskSet
 5) 提交stage
 6) TaskScheduler发送Task
