@@ -205,3 +205,191 @@ object Demo04_CreateDF_RDD_CaseClass {
   }
 }
 ```
+
+## 3 DataFrame编程
+### 3.1	加载数据源为DF
+在Spark SQL中SparkSession是创建DataFrames和执行SQL的入口
+创建DataFrames有三种方式：
+(1)	从一个已存在的RDD进行转换
+(2)	从JSON/Parquet/CSV/ORC等结构化文件源创建
+(3)	从Hive/JDBC各种外部结构化数据源（服务）创建
+
+### 3.2	DF数据运算操作
+#### 纯SQL操作
+核心要义：将DataFrame 注册为一个临时视图view，然后就可以针对view直接执行各种sql
+临时视图有两种：session级别视图，global级别视图；
+session级别视图是Session范围内有效的，Session退出后，表就失效了；
+全局视图则在application级别有效；
+注意使用全局表时需要全路径访问：global_temp.people
+
+#### DSL风格API(TableApi)语法
+DSL风格API，就是用编程api的方式，来实现sql语法
+DSL：特定领域语言
+dataset的tableApi有一个特点：运算后返回值必回到dataframe
+因为select后，得到的结果，无法预判返回值的具体类型，只能用通用的Row封装
+
+#### DataFrame/dataset的RDD风格算子
+Dataset提供与RDD类似的编程算子，即map/flatMap/reduceByKey等等，不过本方式使用略少：
+- 如果方便用sql表达的逻辑，首选sql
+- 如果不方便用sql表达，则可以把Dataset转成RDD后使用 RDD的算子
+
+### 3.3 RDD、DataFrmae和DataSet之间的关系和区别
+![](spark-sql笔记_img/2022-07-14-21-20-55.png)
+#### RDD、DataFrmae和DataSet是什么
+- RDD是一个懒执行的弹性分布式数据集，是spark计算逻辑的一个抽象，它并不储存需要处理的数据，而是记录数据计算流程的逻辑与依赖。
+- DataFrmae是sql的编程抽象 , 本质就是对RDD的封装  在RDD上添加了数据结构信息  RDD + Schema。
+- Dataset可以认为是DataFrame的一个特例，主要区别是Dataset每一个record存储的是一个强类型值而不是一个Row，DataFrame=Dataset[Row]。
+
+#### 共性
+- RDD、DataFrame、Dataset全都是spark平台下的分布式弹性数据集；
+- 三者都有partition的概念；
+- 三者有许多共同的函数，如filter，排序等；
+- DataFrame和Dataset均可使用模式匹配获取各个字段的值和类型；
+
+#### 三者的区别
+- Dataset和DataFrame拥有完全相同的成员函数，区别是每一行的数据类型不同；
+- RDD不支持sparksql操作，DataFrame与Dataset均支持sparksql的操作；
+- 与RDD和Dataset不同，DataFrame每一行的类型固定为Row，只有通过解析才能获取各个字段的值；
+
+## 4 RDD、DataFrmae和DataSet之间的相互转化
+![](spark-sql笔记_img/2022-07-14-22-05-39.png)
+RDD、DataFrame、Dataset三者有许多共性，有各自适用的场景常常需要在三者之间转换
+DF  DS 使用SQL处理   DSL风格处理 
+DF  优先使用这个   统一的封装的数据结构  Row
+DS  功能强         封装各种类型 
+RDD 充分的使用coreRDD编程的灵活性
+
+## 5 自定义函数
+### 5.1 自定义UDF函数
+```scala
+    // 自定义函数
+    val f = (username:String)=>{
+      "Hello~"+username.toUpperCase
+    }
+
+    // 注册函数
+    session.udf.register("add_hello",f)
+
+    // 测试
+    session.sql(
+      """
+        |select
+        |       uid,
+        |       add_hello(name) as h_name
+        |from
+        |       tb_user;
+        |""".stripMargin).show()
+```
+
+### 5.2 自定义UDAF函数
+![](spark-sql笔记_img/2022-07-14-22-12-51.png)
+```scala
+
+    // 获取数据
+    // 导入
+    import org.apache.spark.sql.functions._
+    df.show()
+    // 创建视图
+    df.createTempView("tb_user")
+
+    /**
+     * +---+----+---+------+
+     * |uid|name|age|gender|
+     * +---+----+---+------+
+     * |  1| zss| 23|     M|
+     * |  2| lss| 33|     M|
+     * |  3|  ww| 21|     F|
+     * +---+----+---+------+
+     */
+
+    // 注册UDAF函数
+    session.udf.register("myavg",udaf(new MyAvgFunction))
+
+    // 使用自定义聚合函数
+    session.sql(
+      """
+        |select
+        |       myavg(age) as avg_age
+        |from
+        |       tb_user;
+        |""".stripMargin).show()
+
+    /**
+     * +------------------+
+     * |           avg_age|
+     * +------------------+
+     * |25.666666666666668|
+     * +------------------+
+     */
+  }
+}
+
+/**
+ * 自定义聚合函数类
+ * 泛型1   输入数据
+ * 泛型2    中间的缓存数据
+ * 泛型3   输出结果数据
+ */
+class MyAvgFunction extends Aggregator[Int,Buff,Double]{
+  // 初始值
+  override def zero: Buff = Buff(0,0)
+
+  // 分区内计算逻辑
+  override def reduce(b: Buff, a: Int): Buff = {
+    val sum = b.sum+a
+    val cnt = b.cnt + 1
+    Buff(sum,cnt)
+  }
+
+  // 各分区的数据合并
+  override def merge(b1: Buff, b2: Buff): Buff = {
+    Buff(b1.sum+b2.sum,b1.cnt+b2.cnt)
+  }
+
+  // 最终计算结果
+  override def finish(reduction: Buff): Double = {
+    reduction.sum/reduction.cnt
+  }
+
+  /**
+   * 这里是rdd  数据来自sql---rdd  返回sql
+   * @return
+   */
+  override def bufferEncoder: Encoder[Buff] = Encoders.product
+
+  override def outputEncoder: Encoder[Double] = Encoders.scalaDouble
+}
+
+case class Buff(sum:Double,cnt:Double)
+
+```
+
+## 6 Spark-SQL的核心运行原理
+![](spark-sql笔记_img/2022-07-14-22-38-07.png)
+第一步 解析sql语句
+第二步 绑定元数据
+第三步 优化sql语句
+第四步 生成执行代码
+
+1. 使用parser解析器去解析sql语句 生成逻辑执行计划
+2. analyzer绑定catalog元数据信息 生成绑定了元数据信息的逻辑执行计划
+3. optimizer优化sql执行逻辑
+4. planer执行物理执行计划
+5. execution转成RDD
+
+逻辑执行计划和物理执行计划的区别最大的在于是否绑定了元数据信息
+
+B-S 网络要求高 类似于网页浏览 客户端更新了本地不用更新
+C-S 内存要求高 例如游戏  客户端要更新,所有人都需要更新
+
+
+sql 进来用parser先生成一个AST语法树 spark逻辑执行计划 
+analyzer的exectuteAndCheck 
+
+总结
+1. sql进来会传入sqlparser 生成未绑定的逻辑执行计划的
+2. 接着传入到Analyzer去绑定元数据信息catalog,得到绑定了元数据信息的逻辑执行计划,根据计划生成了一个DataSet返回
+3. 再传入到optimizer中去优化
+4. 最后放到planner里生成物理执行计划
+5. 里面的execute触发了getByteArrayRDD,生成 doCodeGen 和 inputRDDS
+6. doCodeGen对代码进行编译,反射,实例化,生成了一个包含stage的计算逻辑的迭代器,而inputRDDS用mappartitionswithindex将迭代器传入里面得到一个RDD
