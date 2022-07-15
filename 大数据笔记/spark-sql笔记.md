@@ -236,12 +236,19 @@ Dataset提供与RDD类似的编程算子，即map/flatMap/reduceByKey等等，�
 ### 3.3 RDD、DataFrmae和DataSet之间的关系和区别
 ![](spark-sql笔记_img/2022-07-14-21-20-55.png)
 #### RDD、DataFrmae和DataSet是什么
-- RDD是一个懒执行的弹性分布式数据集，是spark计算逻辑的一个抽象，它并不储存需要处理的数据，而是记录数据计算流程的逻辑与依赖。
-- DataFrmae是sql的编程抽象 , 本质就是对RDD的封装  在RDD上添加了数据结构信息  RDD + Schema。
-- Dataset可以认为是DataFrame的一个特例，主要区别是Dataset每一个record存储的是一个强类型值而不是一个Row，DataFrame=Dataset[Row]。
+- RDD是一个懒执行的弹性分布式数据集，是spark计算逻辑的一个抽象，它并不储存需要处理的数据，而是记录数据和操作数据的方法。
+- DataFrmae是spark-sql的编程抽象 , 本质就是对RDD的封装  在RDD上添加了数据结构信息Schema，更像一个二维表。
+- Dataset是DataFrame API的一个扩展，相之DataFrame保存了类型信息，是强类型的，且提供了编译时类型检查，与RDD相比保存了更多的描述信息，概念上等同于关系型数据库中的二维表。
+
+在对DataFrame和Dataset进行操作许多操作都需要这个包进行支持
+```scala
+import spark.implicits._
+//这里的spark是SparkSession的变量名
+```
 
 #### 共性
 - RDD、DataFrame、Dataset全都是spark平台下的分布式弹性数据集；
+- 都有懒加载机制；
 - 三者都有partition的概念；
 - 三者有许多共同的函数，如filter，排序等；
 - DataFrame和Dataset均可使用模式匹配获取各个字段的值和类型；
@@ -251,13 +258,28 @@ Dataset提供与RDD类似的编程算子，即map/flatMap/reduceByKey等等，�
 - RDD不支持sparksql操作，DataFrame与Dataset均支持sparksql的操作；
 - 与RDD和Dataset不同，DataFrame每一行的类型固定为Row，只有通过解析才能获取各个字段的值；
 
-## 4 RDD、DataFrmae和DataSet之间的相互转化
+### 3.4 RDD、DataFrmae和DataSet之间的相互转化
 ![](spark-sql笔记_img/2022-07-14-22-05-39.png)
+![](spark-sql笔记_img/2022-07-15-09-10-02.png)
 RDD、DataFrame、Dataset三者有许多共性，有各自适用的场景常常需要在三者之间转换
 DF  DS 使用SQL处理   DSL风格处理 
 DF  优先使用这个   统一的封装的数据结构  Row
 DS  功能强         封装各种类型 
 RDD 充分的使用coreRDD编程的灵活性
+
+### 3.5 RDD、DataFrmae和DataSet的使用场景
+- RDD：
+  - 只需要对数据集进行最基本的转换、处理和控制；
+  - 非结构化的，比如流媒体或者字符流；
+  - 并不需要优化结构化和半结构化数据集；
+  - 需要充分使用coreRDD编程的灵活性。
+- DataFrame：
+  - 想要对处理的半结构化数据进行高级处理，比如聚合、sql查询、列式访问；
+  - 想要在不同的Spark库之间使用一致和简化的API；
+  - 想要有类型的JVM对象，用上Catalyst优化；
+- DataSet：
+  -  由于Dataset数据结构，是一个强类型分布式集合，并且采用特殊方式对数据进行编码，所以与DataFrame相比，编译时发现语法错误和分析错误，以及缓存数据时比RDD更加节省空间。
+  -  在实际项目中建议使用Dataset进行数据封装，数据分析性能和数据存储更加好。
 
 ## 5 自定义函数
 ### 5.1 自定义UDF函数
@@ -379,17 +401,12 @@ case class Buff(sum:Double,cnt:Double)
 
 逻辑执行计划和物理执行计划的区别最大的在于是否绑定了元数据信息
 
-B-S 网络要求高 类似于网页浏览 客户端更新了本地不用更新
-C-S 内存要求高 例如游戏  客户端要更新,所有人都需要更新
-
-
 sql 进来用parser先生成一个AST语法树 spark逻辑执行计划 
-analyzer的exectuteAndCheck 
 
 总结
-1. sql进来会传入sqlparser 生成未绑定的逻辑执行计划的
-2. 接着传入到Analyzer去绑定元数据信息catalog,得到绑定了元数据信息的逻辑执行计划,根据计划生成了一个DataSet返回
-3. 再传入到optimizer中去优化
-4. 最后放到planner里生成物理执行计划
-5. 里面的execute触发了getByteArrayRDD,生成 doCodeGen 和 inputRDDS
-6. doCodeGen对代码进行编译,反射,实例化,生成了一个包含stage的计算逻辑的迭代器,而inputRDDS用mappartitionswithindex将迭代器传入里面得到一个RDD
+1. sql进来会传入SQL parser 生成未绑定的逻辑执行计划的AST语法树；
+2. 接着传入到分析器(Analyzer)去绑定元数据信息catalog,得到绑定了元数据信息的逻辑执行计划(resolved LogicalPlan)；
+3. 再传入到优化器(optimizer)对逻辑执行计划进行优化(生成optimized LogicalPlan);
+4. 然后放到执行器(Spark-Planner)里生成物理执行计划(PhysicalPlan);
+5. 使用prepareForExecution()将PhysicalPlan转换成可执行物理计划;
+6. 使用execute()执行可执行物理计划,生成SchemaRDD.
