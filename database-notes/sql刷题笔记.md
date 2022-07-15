@@ -67,6 +67,9 @@ UNBOUNDED：起点
 UNBOUNDED PRECEDING 表示从前面的起点，
 
 UNBOUNDED FOLLOWING 表示到后面的终点
+
+-- 示例
+sum(like_a) over(partition by tag order by dt ROWS between 6 preceding and current row )
 ```
 
 #### 牛客-SQL164 2021年11月每天新用户的次日留存率
