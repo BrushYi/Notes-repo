@@ -577,7 +577,39 @@ standalone是spark自身携带的资源管理框架，yarn是hadoop中的资源�
 ![](spark笔记_img/2022-07-10-22-16-37.png)
 DAGScheduler划分stage之后将taskSet发送TaskScheduler中，TaskScheduler将task序列化，根据调度策略发给executor，Executor收到Task对象并反序列化后，会将Task包装成一个TaskRunner类以便放入线程池执行。
 
-## 7 Shuffle Writer机制
+## 7 Shuffle
+Shuffle分为Hash Shuffle和Sort Shuffle。Spark 1.2起默认使用Sort Shuffle，并且Sort Shuffle在map端有三种实现，分别是UnsafeShuffleWriter、BypassMergeSortShuffleWriter、SortShuffleWriter，根据运行时信息自动选择对应的实现。
+[Spark HashShuffle与SortShuffle](https://blog.csdn.net/qq_33044969/article/details/122984280?ops_request_misc=%257B%2522request%255Fid%2522%253A%2522165789124416780357236413%2522%252C%2522scm%2522%253A%252220140713.130102334.pc%255Fall.%2522%257D&request_id=165789124416780357236413&biz_id=0&utm_medium=distribute.pc_search_result.none-task-blog-2~all~first_rank_ecpm_v1~rank_v31_ecpm-6-122984280-null-null.142^v32^new_blog_fixed_pos,185^v2^control&utm_term=sortshuffle&spm=1018.2226.3001.4187)
+
+
+### 7.1 Hash Shuffle
+HashShuffle 存在两个版本，未经优化的和已经优化的版本。合并机制主要是通过复用buffer来优化Shuffle过程中产生的小文件的数量。HashShuffle是不具有排序的Shuffle。
+#### 普通机制的HashShuffle
+![](spark-core笔记_img/2022-07-15-21-38-53.png)
+Excecutor中的每个Task需要把数据进行Hash计算，分到3块缓存当中。然后Reducer再从每个Task中将编号与自己相等的缓存块的数据拉取过来，形成一个大的数据集。这里，每一个Task都会输出三个本地文件，一共4个Mapper Task，所以一共输出了12个本地小文件。
+
+问题：shuffle前回产生海量小文件；读写磁盘时的对象过多可能导致OOM。
+
+#### 合并机制的 HashShuffle
+![](spark-core笔记_img/2022-07-15-21-39-41.png)
+合并机制就是复用buffer，开启合并机制的配置是spark.shuffle.consolidateFiles，该参数的默认值为false，将其设置为true即可开启优化机制，通常来说，如果我们使用HashShuffleManager，那么就建议开启这个选项。
+这里还是4个Tasks，数据类别还是3种类型，因为Hash算法会根据Key分类，在同一个进程中，无论有多少Task，都会把同样的Key写入到同一个Buffer中，然后把Buffer中的数据写入本地文件中。每一个Task所在的进程中，分别写入共同进程中的3份本地文件，这里有4个Mapper Tasks，所以一共输出2个cores × 3个分类文件 = 6个本地小文件。
+
+问题：如果Reducer端的并行任务或者数据分片过多的话，Core核心数 × Reduce Task数依旧过大，也会产生很多小文件。
+
+### 7.2 SortShuffle
+Sort Shuffle在map端有三种实现，分别是UnsafeShuffleWriter、BypassMergeSortShuffleWriter、SortShuffleWriter。
+![](spark-core笔记_img/2022-07-15-21-45-11.png)
+
+- 运行时三种ShuffleWriter实现的选择
+Spark根据运行时信息选择三种ShuffleWriter实现中的一种。
+![](spark-core笔记_img/2022-07-15-21-45-33.png)
+
+- 没有map端聚合操作，且RDD的Partition数小于200，使用BypassMergeSortShuffleWriter。
+- 没有map端聚合操作，RDD的Partition数小于16777216，且Serializer支持relocation，使用UnsafeShuffleWriter。
+- 上述条件都不满足，使用SortShuffleWriter。
+
+#### Shuffle Writer机制
 ![](spark笔记_img/2022-07-10-22-28-33.png)
 > Shuffle 分为 Shuffle Write 和 Shuffle Read 两个阶段，分别负责stage间数据的输出与输入。
 > Shuffle Write 主要是生成 shuffle 中间文件的一个过程。在 shuffle 中间文件生成的过程中，Shuffle Writer 主要
@@ -598,7 +630,7 @@ DAGScheduler划分stage之后将taskSet发送TaskScheduler中，TaskScheduler将
 
 ### 堆外内存
 相比堆内内存，堆外内存只区分 Execution 内存和 Storage 内存
-![](spark-core笔记_img/2022-07-12-15-37-55.png)
+![](spark-core笔记_img/2022-07-12-15-37-55.png) 
 
 堆外内存可以避免频繁的 GC，但是必须自己编写内存申请和释放的逻辑。
 
@@ -631,3 +663,9 @@ DAG与RDD的关系
 > DAG是有向无环图，指的是数据转换执行的过程，是RDD的一个依赖关系和执行流程。RDD触发行动算子后就形成了DAG。
 
 ---
+为什么计算引擎用spark而不用mr？
+> 1.spark开发更便捷，多个stage可以串行执行，不需要像mr那样写多个程序；
+> 2.RDD可以缓存，可以实现数据的复用，并提高容错。
+
+---
+
