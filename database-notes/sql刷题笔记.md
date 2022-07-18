@@ -188,3 +188,6 @@ ORDER BY
   - 对于值为null的记录，根据情况赋值为0；
   - 分两种情况输出时，用where exist (查询是否存在记录)判断是否输出；
   - 两个输出条件互斥，可以使用union all。
+
+#### SQL139 近三个月未完成试卷数为0的用户完成情况
+[group by 基础上进行开窗问题](https://www.nowcoder.com/practice/4a3acb02b34a4ecf9045cefbc05453fa?tpId=240&tqId=2183407&ru=/exam/oj&qru=/ta/sql-advanced/question-ranking&sourceUrl=%2Fexam%2Foj%3Ftab%3DSQL%25E7%25AF%2587%26topicId%3D240)
