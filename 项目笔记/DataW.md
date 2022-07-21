@@ -113,46 +113,33 @@ Flume使用两个独立的事务：
 -  put操作：source读取数据源并写入event到channel
 -  take操作：sink从channel中获取event并写出到目标存储
 
-batchSize <= transactionCapacity <= capacity；
-
-三组件的容量*
-数量关系
+**容量关系**
 batchSize: 每个Source和Sink都可以配置一个batchSize的参数。这个参数代表一次性到channel中put|take 多少个event!
 batchSize <= transactionCapacity
 transactionCapacity： putList和takeList的初始值
 capacity： channel中存储event的容量大小
+batchSize <= transactionCapacity <= capacity
 transactionCapacity <= capacity
 
-7.20
-数据量计算
-（总用户、活跃用户、访问时长、业务特点、每人平均产生多少条日志、每条日志多大、每天产生多少条日志、日志总条数与总大小、平局每秒多少数据大小）
-上游平均3.5M/s,高峰算20倍70M/s
+### 2.4 采集集群配置
+#### 自定义拦截器使用日志时间
+需求：保证指定日期的数据落在当前日期的文件夹下。
+实现：自定义拦截器，抽取行为数据中事件数据的时间戳 , 转换成年月日存储在Header中 
+1. 添加flume依赖；
+2. 定义一个类，实现Interceptor接口；
+3. 实现四个方法：initialize、Event intercept、List intercept、close，方法的作用分别是初始化拦截器、拦截每条事件处理、处理所有事件、拦截器结束；
+4. 创建一个静态内部类拦截器构建器，因为自定义拦截器的类无法直接new，需要通过flume配置文件调用静态内部类，来间接地调用自定义的拦截器对象；
+5. 打包上传到flume所在服务器上的flume/lib下；
+6. 配置拦截器。
 
-是否会产生数据积压：
-不会，首先我们的配置采用的是富裕配置，在采集上游配置了failoverHA，避免了上游的积压，
-然后在采集下游我们配置了多channel负载均衡，多个sink并行输出。
+#### 级联
+在实际生产中我们的日志服务器和HDFS集群之间是不能直接访问的，为了保证集群的安全性,可以使用中间层服务器(跳板机)连接通信。
+![](DataW_img/2022-07-21-10-29-20.png)
 
-数据延迟产生的原因：
-1. 数据传输有延迟；
-2. 数据是批次处理的，不满足一批不会执行；
-3. 网络延迟；
+#### failover模式
+在上游配置多个sink , 组成一个失败会自动切换的sink组，同一个sink组中的sink根据配置的sink优先级来进行日志采集﹒优先级别高的sink作为主sink进行处理数据，优先级低的sink作为备用sink。当主sink出现故障时,channel负责切换到备用sink上.在数据采集的过程中会不断地尝试主sink是否恢复。
+![](DataW_img/2022-07-21-10-30-51.png)
 
-怎么处理：
-1. 以日志时间为准；
-2. 将统计计算任务向后推1h，计算任务在第二天1：00开始；
-3. 在3：00的时候检查统计时与此时的数据条数的变化，根据延迟阈值判断是否重新计算。
-
-数据重复判断：
-统计hdfs采集条数、收集日志服务器产生数据条数汇总，二者对比
-行数统计：
-本地文本 cat file | wc -l
-hdfs hdfs dfs -text filepath | wc -l
-
-去重：
-入库前去重、入库后去重（计算压力转到数仓）
-
-输出数据压缩格式（默认sequencefile），hdfs.fileType（输出类型）hdfs.codeC（压缩算法）
-
-质量监测服务：汇总各个服务器产生以及hdfs收集的日志条数
-
-web
+#### 提升HDFS并发
+通过配置选择器，使一个source对接多个channel，实现负载均衡多路复用，多个sink并行执行，提高写hdfs的效率。
+![](DataW_img/2022-07-21-10-35-58.png)
