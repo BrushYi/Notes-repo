@@ -99,17 +99,90 @@ HDFS默认采用的是主从架构,架构中有三个角色:一个叫NameNode,�
 ### 8.4 Yarn调度器和调度算法
 
 ---
+## 知识点总结
+#### HDFS的写数据流程
+![](Hadoop笔记_img/2022-07-21-20-29-32.png)![](Hadoop笔记_img/2022-07-21-20-29-32.png)
+1. Client 发起文件上传请求， 通过 RPC 与 NameNode 建立通讯, NameNode检查目标文件是否已存在， 父目录是否存在， 返回是否可以上传；
+2. Client 请求第一个block该传输到哪些 DataNode 服务器上；
+3. NameNode返回可用的DataNode 的地址如： A, B, C；
+(Hadoop 在设计时考虑到数据的安全与高效， 数据文件默认在 HDFS 上存放三份，
+存储策略为本地一份， 同机架内其它某一节点上一份， 不同机架的某一节点上一份。)
+4. Client 请求3台DataNode中的一台A上传数据（ 本质上是一个 RPC调用， 建立 pipeline ）,A 收到请求会继续调用 B，然后B调用C，将整个pipeline建立完成，然后后逐级返回 client；
+5. Client 开始往 A 上传第一个 block（ 先从磁盘读取数据放到一个本地内存缓存），以packet为单位（ 默认 64K，A 收到一个packe 就会传给B，B传给C。每发送一个packet都会将其放入一个应答队列等待应答；
+   `(FSDataInputStream流将blk01中的内容读到一个buf中,buf大小为4KB,每读满一个buf,就会flush一次,将数据写到chunk中,一个chunk大小为512b的数据内容加上4b的校验(checksum)内容,也就是516b,chunk是数据传输过程中的最小校验单位,然后再将chunk写入到packet中,packet是client和datanode进行数据传输的最小单位,一个packet大概是64KB)`
+6. packet被最后一台DataNode节点保存成功后，会向pipeline的反方向发送应答，最终由节点 A 将pipelineack 发送给 Client，将应答队列中的packet移除；
+7. 当一个block传输完成之后，Client会再次请求NameNode上传第二个block，重复以上步骤。
 
+---
+#### HDFS的读数据流程
+![](Hadoop笔记_img/2022-07-21-20-30-25.png)
+1. Client 向 NameNode 发起 RPC 请求， 来确定请求文件 block 所在的位置；
+2. NameNode 会视情况返回文件的部分或者全部 block 列表， 对于每个 block，NameNode 都会返回含有该 block 副本的 DataNode 地址；
+3. Client 根据集群拓扑结构选取离自己最近的DataNode 来读取 block，如果客户端本身就是DataNode， 那么将从本地直接获取数据(短路读取特性)；
+4. 底层上本质是建立FSDataInputStream， 重复的调用父类 DataInputStream 的 read 方法， 直到这个块上的数据读取完毕；
+5. 当读完列表的 block 后， 若文件读取还没有结束， 客户端会继续向NameNode 获取下一批的 block 列表；
+6. 读取完一个 block 都会进行 checksum 验证， 如果读取 DataNode 时出现错误， 客户端会通知 NameNode， 然后再从下一个拥有该 block 副本的DataNode 继续读；
+7. 最终读取来所有的 block 会合并成一个完整的最终文件。
+从 HDFS 文件读写过程中， 可以看出， HDFS 文件写入时是串行写入的， 数据包先发
+送给节点 A， 然后节点 A 发送给 B， B 在给 C； 而 HDFS 文件读取是并行的， 客户端
+Client 直接并行读取 block 所在的节点。
 
+---
+#### NameNode与DataNode的交互
+![](Hadoop笔记_img/2022-07-21-20-43-51.png)
+
+一个数据块在 datanode 上以文件形式存储在磁盘上， 包括两个文件，一个是数据本身， 一个是元数据（数据块的长度、块数据的校验和、时间戳）
+1. DataNode 启动后向 namenode 注册， 通过后，每6小时向namenode上报所有的块信息。 
+2. 心跳是每 3 秒一次，心跳返回结果带有 namenode 给该 datanode 的命令如复制块数据到另一台机器，或删除某个数据块。
+3. 如果超过 10 分钟+ 30秒没有收到某个 datanode 的心跳，则认为该节点不可用；
+4. 将这个节点移出集群，然后在任务队列中发布任务，新增一份宕机节点储存的block块副本。
+
+---
+#### NameNode和SecondaryNameNode
+![](Hadoop笔记_img/2022-07-21-21-00-34.png)
+1）第一阶段：NameNode启动
+（1）第一次启动NameNode格式化后，创建Fsimage和Edits文件。如果不是第一次启动，直接加载编辑日志和镜像文件到内存。
+（2）客户端对元数据进行增删改的请求。
+（3）NameNode记录操作日志，更新滚动日志。
+（4）NameNode在内存中对元数据进行增删改。
+2）第二阶段：Secondary NameNode工作
+（1）Secondary NameNode询问NameNode是否需要CheckPoint。直接带回NameNode是否检查结果。
+（2）Secondary NameNode请求执行CheckPoint。
+（3）NameNode滚动正在写的Edits日志。
+（4）将滚动前的编辑日志和镜像文件拷贝到Secondary NameNode。
+（5）Secondary NameNode加载编辑日志和镜像文件到内存，并合并。
+（6）生成新的镜像文件fsimage.chkpoint。
+（7）拷贝fsimage.chkpoint到NameNode。
+（8）NameNode将fsimage.chkpoint重新命名成fsimage。
+
+---
+#### MapReduce的工作流程
 ![](Hadoop笔记_img/2022-06-07-18-30-26.png)
-（1）Read阶段：MapTask通过InputFormat获得的RecordReader，从输入InputSplit中解析出一个个key/value。
-	（2）Map阶段：该节点主要是将解析出的key/value交给用户编写map()函数处理，并产生一系列新的key/value。
-	（3）Collect收集阶段：在用户编写map()函数中，当数据处理完成后，一般会调用OutputCollector.collect()输出结果。在该函数内部，它会将生成的key/value分区（调用Partitioner），并写入一个环形内存缓冲区中。
-	（4）Spill阶段：即“溢写”，当环形缓冲区满后，MapReduce会将数据写到本地磁盘上，生成一个临时文件。需要注意的是，将数据写入本地磁盘之前，先要对数据进行一次本地排序，并在必要时对数据进行合并、压缩等操作。
-	溢写阶段详情：
-	步骤1：利用快速排序算法对缓存区内的数据进行排序，排序方式是，先按照分区编号Partition进行排序，然后按照key进行排序。这样，经过排序后，数据以分区为单位聚集在一起，且同一分区内所有数据按照key有序。
-	步骤2：按照分区编号由小到大依次将每个分区中的数据写入任务工作目录下的临时文件output/spillN.out（N表示当前溢写次数）中。如果用户设置了Combiner，则写入文件之前，对每个分区中的数据进行一次聚集操作。
-	步骤3：将分区数据的元信息写到内存索引数据结构SpillRecord中，其中每个分区的元信息包括在临时文件中的偏移量、压缩前数据大小和压缩后数据大小。如果当前内存索引大小超过1MB，则将内存索引写到文件output/spillN.out.index中。
-	（5）Merge阶段：当所有数据处理完成后，MapTask对所有临时文件进行一次合并，以确保最终只会生成一个数据文件。
-	当所有数据处理完后，MapTask会将所有临时文件合并成一个大文件，并保存到文件output/file.out中，同时生成相应的索引文件output/file.out.index。
-	在进行文件合并过程中，MapTask以分区为单位进行合并。对于某个分区，它将采用多轮递归合并的方式。每轮合并mapreduce.task.io.sort.factor（默认10）个文件，并将产生的文件重新加入待合并列表中，对文件排序后，重复以上过程，直到最终得到一个大文件。
+1. 客户端会通过 getSplits 方法对输入目录中的文件进行逻辑切片规划，生成切片规划文件(jpb.split、wc.jar、job.xml)发送给yarn，yarn对其进行计算启动相应数量MapTask；
+2. maptask会调用InPutFormat()方法去HDFS上面读取文件,调用RecordRead()方法,将数据以行首字母的偏移量为key,以行
+数据为value传给mapper()方法；
+3. mapper方法对数据进行处理后，数据被collect方法收集，对其进行分区标记（调用Partitioner），然后写入环形缓冲区；
+4. 环形缓冲区是一块内存区域，作用是批量收集 Mapper 结果, 减少磁盘 IO 的影响。大小默认100M，当数据写到80%以后会发生溢写，在数据溢写到本地磁盘之前会对数据进行一次快速排序以及分区(如果设置了combiner操作也会溢写时进行，前提是combiner不会影响最终结果)；
+5. 所有数据处理完成后，MapTask会对所有临时文件以分区为单位进行一次归并；
+
+![](Hadoop笔记_img/2022-07-21-21-21-38.png)
+1. Map阶段结束后，会启动根据分区数启动一定数量的ReduceTask，从Map端拉取数据到内存中（内存不足则存在磁盘）；
+2. 将拉取到的数据进行一次归并排序，归并后的文件会再次进行一次分组的操作,然后将数据以组为单位发送到
+reduce()方法；
+1. reduce方法做一些逻辑判断后,最终调用OutputFormat()方法,调用其中的RecordWrite()方法将数据以KV的形式写出
+到HDFS上。
+
+---
+#### Yarn的工作机制
+![](Hadoop笔记_img/2022-07-21-21-52-13.png)
+1. MR程序提交到客户端所在的节点。客户端启动YarnRunner向ResourceManager申请一个Application；
+2. RM将该应用程序的资源路径返回给YarnRunner，该程序将运行所需资源提交到HDFS上；
+3. 程序资源提交完毕后，申请运行mrAppMaster；
+4. RM将用户的请求初始化成一个Task，发布到调度队列；
+5. 其中一个NodeManager领取到Task任务，在其内部创建容器Container，生成MRAppmaste并向ResourceManager 注册；
+6. MRAppmaste从HDFS上获取资源，计算任务所需的资源，向RM申请运行MapTask资源；
+7. RM将运行MapTask的任务发布到调度队列，NodeManager领取任务并创建容器；
+8. MR向接收到任务的NodeManager发送程序启动脚本，NodeManager分别启动MapTask；
+9. MrAppMaster等待所有MapTask运行完毕后，向RM申请容器，运行ReduceTask；
+10. 所有程序运行完毕后，MR向RM申请注销自己。
+
