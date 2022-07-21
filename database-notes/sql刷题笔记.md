@@ -192,3 +192,126 @@ ORDER BY
 #### SQL139 近三个月未完成试卷数为0的用户完成情况
 [group by 基础上进行开窗问题](https://www.nowcoder.com/practice/4a3acb02b34a4ecf9045cefbc05453fa?tpId=240&tqId=2183407&ru=/exam/oj&qru=/ta/sql-advanced/question-ranking&sourceUrl=%2Fexam%2Foj%3Ftab%3DSQL%25E7%25AF%2587%26topicId%3D240)
 窗口函数与group by一起使用并不冲突，窗口函数也是基于整个group by后的查询结果(而不是基于每组组内的查询结果)。
+
+#### SQL140 未完成率较高的50%用户近三个月答卷情况
+[SQL140 未完成率较高的50%用户近三个月答卷情况](https://www.nowcoder.com/practice/3e598a2dcd854db8b1a3c48e5904fe1c?tpId=240&tags=&title=&difficulty=0&judgeStatus=0&rp=0&sourceUrl=%2Fexam%2Foj%3Ftab%3DSQL%25E7%25AF%2587%26topicId%3D240)
+```sql
+-- 需求：SQL试卷上未完成率较高的50%用户中，6级和7级用户在有试卷作答记录的近三个月中，每个月的答卷数目和完成数目。
+-- 维度：试卷类型》sql试卷；用户等级》6、7级；时间》有作答记录的近3个月
+-- 注意：未完成率前50%
+-- 分析思路：
+        -- 三表连接，以uid为组，求sql试卷的未完成率，排名及计算总人数作为临时表t；
+        -- 对表exam_record操作，取t中的uid过滤，连接user_info与exam_record，以月份为组排名，计算结果
+WITH t AS (
+	SELECT
+		*,
+		row_number() over ( ORDER BY incomplete_rate DESC ) AS rn,
+		count( 1 ) over () AS cnt 
+	FROM
+		(
+		SELECT
+			e1.uid,
+			sum(
+			IF
+			( submit_time IS NULL, 1, 0 )) AS countincomplete_cnt,
+			count( 1 ) AS total_cnt,
+			round( sum( IF ( submit_time IS NULL, 1, 0 ))/ count( 1 ), 4 ) AS incomplete_rate 
+		FROM
+			user_info AS u
+			JOIN exam_record AS e1 ON u.uid = e1.uid
+			JOIN examination_info AS e2 ON e1.exam_id = e2.exam_id 
+		WHERE
+			tag = "SQL" 
+		GROUP BY
+			uid 
+		) AS tt 
+	)
+###########################################
+SELECT
+	uid,
+	start_month,
+	count( 1 ) AS total_cnt,
+	count( score ) AS complete_cnt 
+FROM
+	(
+	SELECT
+		e.uid,
+		date_format( start_time, "%Y%m" ) AS start_month,
+		score,
+		dense_rank() over ( PARTITION BY uid ORDER BY date_format( start_time, "%Y%m" ) DESC ) AS mrn 
+	FROM
+		user_info AS u
+		JOIN exam_record AS e ON u.uid = e.uid 
+		AND LEVEL BETWEEN 6 
+		AND 7 
+	WHERE
+		e.uid IN (
+		SELECT
+			uid 
+		FROM
+			t 
+		WHERE
+		rn <= round( cnt / 2, 0 )) 
+	) AS ttt 
+WHERE
+	mrn <= 3 
+GROUP BY
+	uid,
+	start_month 
+ORDER BY
+	uid,
+	start_month;
+```
+
+- 要点：
+  - 对完成率排名rn，并统计数据总条数cnt，rn <= round( cnt / 2, 0 )) 即可过滤出前一半数据
+  - 6级和7级用户需要在排名前一半的数据中过滤
+
+#### 141 试卷完成数同比2020年的增长率及排名变化
+[141 试卷完成数同比2020年的增长率及排名变化](https://www.nowcoder.com/practice/13415dff75784a57bedb6d195262be7b?tpId=240&tags=&title=&difficulty=0&judgeStatus=0&rp=0&sourceUrl=%2Fexam%2Foj%3Ftab%3DSQL%25E7%25AF%2587%26topicId%3D240)
+```sql
+-- 需求:2021年上半年各类试卷的做完次数相比2020年上半年同期的增长率（百分比格式，保留1位小数）以及做完次数排名变化
+-- 维度：试卷类型；时间》》2020年及2021年的上半年；
+-- 注意：输出的记录需两年的上半年都有记录
+-- 思路分析：
+    -- 连接两表，取上半年记录，按tag、年分组计算作答完成记录数，并对其排名（rank），作为临时表t
+    -- t进行自连接，取出能输出同比结果的tag，对其进行计算
+
+with t as (
+select
+    tag,
+    start_year,
+    exam_cnt,
+    rank() over(partition by start_year order by exam_cnt desc) as exam_cnt_rank
+from (
+    select
+        tag,
+        year(start_time) as start_year,
+        sum(if(score is null,0,1)) as exam_cnt
+    from
+        examination_info as e1
+    join
+        exam_record as e2
+    on e1.exam_id = e2.exam_id
+    where month(start_time) <= 6 and score is not null
+    group by tag,year(start_time)) as tt
+)
+
+select
+    t1.tag,
+    t1.exam_cnt as exam_cnt_20,
+    t2.exam_cnt as exam_cnt_21,
+    concat(round((t2.exam_cnt-t1.exam_cnt) / t1.exam_cnt*100,1),"%") as growth_rate,
+    t1.exam_cnt_rank as exam_cnt_rank_20,
+    t2.exam_cnt_rank as exam_cnt_rank_21,
+    cast(t2.exam_cnt_rank as signed) - cast(t1.exam_cnt_rank as signed) as rank_delta
+from
+    (select * from t where start_year = 2020) as t1
+inner join
+    (select * from t where start_year = 2021) as t2
+on t1.tag = t2.tag
+order by growth_rate desc,rank_delta desc;
+```
+- 要点：
+  - 没有完成作答的试卷记录不参与统计
+  - 对字段类型（bigint unsigned）不可相减的字段进行相减，需先转换字段类型`cast(t1.exam_cnt_rank as signed)`
