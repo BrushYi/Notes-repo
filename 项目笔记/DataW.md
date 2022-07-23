@@ -135,6 +135,7 @@ transactionCapacity <= capacity
 #### 级联
 在实际生产中我们的日志服务器和HDFS集群之间是不能直接访问的，为了保证集群的安全性,可以使用中间层服务器(跳板机)连接通信。
 ![](DataW_img/2022-07-21-10-29-20.png)
+avro传输采用压缩的方式，压缩比为6（0-9）
 
 #### failover模式
 在上游配置多个sink , 组成一个失败会自动切换的sink组，同一个sink组中的sink根据配置的sink优先级来进行日志采集﹒优先级别高的sink作为主sink进行处理数据，优先级低的sink作为备用sink。当主sink出现故障时,channel负责切换到备用sink上.在数据采集的过程中会不断地尝试主sink是否恢复。
@@ -143,3 +144,10 @@ transactionCapacity <= capacity
 #### 提升HDFS并发
 通过配置选择器，使一个source对接多个channel，实现负载均衡多路复用，多个sink并行执行，提高写hdfs的效率。
 ![](DataW_img/2022-07-21-10-35-58.png)
+
+采集到HDFS的数据需要以gzip或gz压缩格式储存(log类型hive无法识别数据)，同时agent脚本要设置压缩格式
+# 后缀根据文件的类型
+a1.sinks.k1.hdfs.fileSuffix = .gz
+a1.sinks.k1.hdfs.codeC=gzip
+a1,sinks.k1.hdfs.fileType = CompressedStream 
+a1.sinks.k1.hdfs.writeFormat = Text。
