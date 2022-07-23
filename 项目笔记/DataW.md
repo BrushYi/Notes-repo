@@ -145,9 +145,14 @@ avro传输采用压缩的方式，压缩比为6（0-9）
 通过配置选择器，使一个source对接多个channel，实现负载均衡多路复用，多个sink并行执行，提高写hdfs的效率。
 ![](DataW_img/2022-07-21-10-35-58.png)
 
+
+
+
 采集到HDFS的数据需要以gzip或gz压缩格式储存(log类型hive无法识别数据)，同时agent脚本要设置压缩格式
-# 后缀根据文件的类型
+后缀根据文件的类型
 a1.sinks.k1.hdfs.fileSuffix = .gz
 a1.sinks.k1.hdfs.codeC=gzip
 a1,sinks.k1.hdfs.fileType = CompressedStream 
 a1.sinks.k1.hdfs.writeFormat = Text。
+
+load加载会清楚原来位置的数据 ？
