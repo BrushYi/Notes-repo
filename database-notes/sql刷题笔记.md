@@ -315,3 +315,34 @@ order by growth_rate desc,rank_delta desc;
 - 要点：
   - 没有完成作答的试卷记录不参与统计
   - 对字段类型（bigint unsigned）不可相减的字段进行相减，需先转换字段类型`cast(t1.exam_cnt_rank as signed)`
+
+#### SQL135 每个6/7级用户活跃情况
+[每个6/7级用户活跃情况](https://www.nowcoder.com/practice/a32c7c8590324c96950417c57fa6ecd1?tpId=240&&tqId=39186)
+```sql
+-- 需求：每个6/7级用户总活跃月份数、2021年活跃天数、2021年试卷作答活跃天数、2021年答题活跃天数
+-- 维度：用户、时间
+-- 注意：
+-- 思路：三表关联，使用count（distinct ）
+
+select
+    u.uid,
+    count(distinct date_format(dt,'%Y%m')) as act_month_total,
+    count(distinct if(year(dt) = 2021,dt,null)) as act_days_2021,
+    count(distinct if(tag = "exam" and year(dt) = 2021,dt,null)) as act_days_2021_exam,
+    count(distinct if(tag = "pra" and year(dt) = 2021,dt,null)) as act_days_2021_question
+from
+    user_info as u
+left join
+    (
+    select uid,date(start_time) as dt,"exam" as tag from exam_record
+    union all
+    select uid,date(submit_time) as dt,"pra" as tag from practice_record
+    ) as t
+on u.uid = t.uid
+where level >= 6
+group by uid
+order by act_month_total desc,act_days_2021 desc;
+```
+- 要点：
+  - 试卷表与试题表的union
+  - count(distinct )中加条件过滤
