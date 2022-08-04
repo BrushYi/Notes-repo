@@ -346,3 +346,43 @@ order by act_month_total desc,act_days_2021 desc;
 - 要点：
   - 试卷表与试题表的union
   - count(distinct )中加条件过滤
+
+#### SQL127 月总刷题数和日均刷题数
+[SQL127 月总刷题数和日均刷题数](https://www.nowcoder.com/practice/f6b4770f453d4163acc419e3d19e6746?tpId=240&tqId=2183006&ru=/exam/oj&qru=/ta/sql-advanced/question-ranking&sourceUrl=%2Fexam%2Foj%3Ftab%3DSQL%25E7%25AF%2587%26topicId%3D240)
+```sql
+-- 需求：2021年每个月里用户的月总刷题数month_q_cnt 和日均刷题数avg_day_q_cnt（按月份升序排序）以及该年的总体情况
+-- 度量、粒度：submit_month	month_q_cnt	avg_day_q_cnt        月、次
+-- 维度：时间》》2021年每月
+-- 注意：
+-- 分析：
+        -- 按月分组，取每月总刷题数，当月天数为day(LAST_DAY(submit_time))，
+        -- 计算  并union 2021年记录
+select
+    date_format(submit_time,'%Y%m') as submit_month,
+    count(1) as month_q_cnt,
+    any_value(round(count(1)/day(LAST_DAY(submit_time)),3)) avg_day_q_cnt
+from
+    practice_record
+where year(submit_time) = '2021'
+group by date_format(submit_time,'%Y%m')
+
+union all
+
+select
+    "2021汇总" as submit_month,
+    count(1) as month_q_cnt,
+    any_value(round(count(1)/ 31,3)) as avg_day_q_cnt
+from
+    practice_record
+where year(submit_time) = '2021'
+
+order by submit_month;
+```
+
+- 要点：
+  - 求该月天数:day(last_day(submit_time))
+  - select后的字段要不就是group by后的列，否则要使用聚合函数，哪怕是增加一个固定值的字段（31），都要先用聚合函数包装
+  - 对于汇总行的构建可以不加group by 直接聚合，所有数据在一个组
+  - 关于解决最新的SQL版本中ONLY_FULL_GROUP_BY报错的办法：
+ONLY_FULL_GROUP_BY的语义就是确定select 中的所有列的值要么是来自于聚合函数（sum、avg、max等）的结果，要么是来自于group by list中的表达式的值。MySQL提供了any_value()函数来抑制ONLY_FULL_GROUP_BY值被拒绝。
+所以只需要在非group by的列上加any_value()就可以了
