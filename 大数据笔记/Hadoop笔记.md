@@ -186,3 +186,6 @@ reduce()方法；
 9. MrAppMaster等待所有MapTask运行完毕后，向RM申请容器，运行ReduceTask；
 10. 所有程序运行完毕后，MR向RM申请注销自己。
 
+#### NameNode 工作机制
+secondaryNameNode请求时间周期默认是1小时或100万次操作。
+

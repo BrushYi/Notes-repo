@@ -410,3 +410,9 @@ sql 进来用parser先生成一个AST语法树 spark逻辑执行计划
 4. 然后放到执行器(Spark-Planner)里生成物理执行计划(PhysicalPlan);
 5. 使用prepareForExecution()将PhysicalPlan转换成可执行物理计划;
 6. 使用execute()执行可执行物理计划,生成SchemaRDD.
+
+## 7 知识点整理
+#### Spark Sql 的任务解析流程
+> 客户端提交任务后， 通过 Sql 解析先生成语法树， 然后从 Catalog 获取元数据信
+> 息， 通过分析得到逻辑执行计划， 进行优化器规则进行逻辑执行的优化， 最后转成
+> 物理执行计划提交到 spark集群执行。
